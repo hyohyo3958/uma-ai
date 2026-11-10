@@ -1,0 +1,57 @@
+name: UMA AI weekly update
+
+on:
+  schedule:
+    # Friday 19:00 JST (10:00 UTC)
+    - cron: "0 10 * * 5"
+    # Saturday 09:00 JST (00:00 UTC)
+    - cron: "0 0 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uma-ai-weekly-update
+  cancel-in-progress: false
+
+jobs:
+  update-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Write pipeline status
+        run: |
+          mkdir -p data
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          status = {
+              "app": "UMA AI",
+              "pipeline": "starter",
+              "updated_at": datetime.now(timezone.utc).isoformat(),
+              "status": "waiting_for_authorized_racing_data",
+              "message": "The scheduled workflow ran. Live race data and predictions are not connected yet.",
+              "predictions_available": False
+          }
+          Path("data/status.json").write_text(
+              json.dumps(status, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8"
+          )
+          PY
+
+      - name: Commit status
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/status.json
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "Update UMA AI pipeline status"
+            git push
+          fi
