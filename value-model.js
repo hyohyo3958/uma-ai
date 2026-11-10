@@ -266,6 +266,7 @@
     prepareHistory,
     scoreHorse,
     calibrateWinProbability,
+    buildWalkForwardCalibration,
     evaluateRaceValue
   };
 })(typeof window !== "undefined" ? window : globalThis);
