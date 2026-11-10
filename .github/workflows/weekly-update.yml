@@ -41,6 +41,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import os
           from datetime import datetime, timezone
           from pathlib import Path
 
@@ -52,7 +53,7 @@ jobs:
               races = payload.get("races", [])
               errors = payload.get("errors", [])
 
-          successful = "${{ steps.fetch_program.outcome }}" == "success" and bool(races)
+          successful = os.environ.get("FETCH_OUTCOME") == "success" and bool(races)
           status = {
               "app": "UMA AI",
               "pipeline": "jra_race_program",
@@ -70,7 +71,7 @@ jobs:
           }
           Path("data").mkdir(exist_ok=True)
           Path("data/status.json").write_text(
-              json.dumps(status, ensure_ascii=False, indent=2) + "\\n",
+              json.dumps(status, ensure_ascii=False, indent=2) + "\n",
               encoding="utf-8"
           )
           PY
