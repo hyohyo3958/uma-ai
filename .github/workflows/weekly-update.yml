@@ -1,11 +1,7 @@
 name: UMA AI weekly update
 
 on:
-  schedule:
-    # Friday 19:00 JST (10:00 UTC)
-    - cron: "0 10 * * 5"
-    # Saturday 09:00 JST (00:00 UTC)
-    - cron: "0 0 * * 6"
+  # Automatic runs are paused until a free data source explicitly permits reuse.
   workflow_dispatch:
 
 permissions:
