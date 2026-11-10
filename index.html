@@ -138,4 +138,38 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.error));
 }
 </script>
+
+<script>
+(async()=>{
+ const badge=document.getElementById('pipelineBadge');
+ const msg=document.getElementById('pipelineMessage');
+ const list=document.getElementById('weekendRaces');
+ if(!badge||!msg||!list)return;
+ try{
+  const response=await fetch('./data/status.json?ts='+Date.now(),{cache:'no-store'});
+  if(!response.ok)throw new Error('status unavailable');
+  const status=await response.json();
+  const updated=status.updated_at?new Date(status.updated_at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}):'不明';
+  badge.textContent=status.predictions_available?'予想データあり':'取得準備中';
+  msg.textContent='最終処理：'+updated+' / '+(status.message||'状況説明なし');
+  const racesResponse=await fetch('./data/weekend.json?ts='+Date.now(),{cache:'no-store'});
+  if(racesResponse.ok){
+   const data=await racesResponse.json();
+   const races=Array.isArray(data.races)?data.races:[];
+   if(races.length){
+    list.textContent=races.map(r=>[r.date,r.venue,r.race_no? r.race_no+'R':'',r.race_name||'レース名未発表'].filter(Boolean).join(' / ')).join('\\n');
+   }else{
+    list.textContent='今週末のレース一覧はまだ取得されていません。';
+   }
+  }else{
+   list.textContent='レース一覧データは未登録です。';
+  }
+ }catch(e){
+  badge.textContent='未接続';
+  msg.textContent='自動データの状態を読み込めませんでした。';
+  list.textContent='現在、レース情報は表示できません。';
+ }
+})();
+</script>
+
 </body></html>
