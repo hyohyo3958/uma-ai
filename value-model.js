@@ -75,7 +75,7 @@
 
   function prepareHistory(rawRows) {
     const rows = (rawRows || []).map(normalizeResult).filter(r =>
-      r.date && r.venue && r.raceNo != null && r.horse && r.finish != null
+      r.date && r.venue && r.raceNo != null && r.horse
     );
     const races = new Map();
     rows.forEach(r => {
