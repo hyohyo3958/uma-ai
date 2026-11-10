@@ -73,6 +73,15 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <div id="scanResult" class="result muted" style="margin-top:12px">条件を選んでスカウターを実行してください。</div>
 </div>
 
+<div class="card" id="valueAiCard">
+<h2>Value AI・過去成績から穴馬を発掘</h2>
+<p class="stat">JRA年度別成績PDFから作った過去成績CSVと、今回の出走表CSVを読み込みます。過去成績から直近成績・コース・距離・馬場・騎手を採点し、時系列検証で勝率を校正します。</p>
+<label for="historyCsv">過去成績CSV（複数年分をまとめたもの）</label><input id="historyCsv" type="file" accept=".csv,text/csv">
+<label for="entryCsv">今回の出走表CSV（単勝オッズを含む）</label><input id="entryCsv" type="file" accept=".csv,text/csv">
+<button class="primary" id="runValueAi">Value AIで分析する</button>
+<div id="valueAiResult" class="result muted" style="margin-top:12px">過去成績CSVと出走表CSVを選択してください。</div>
+<p class="stat">出走表の列名例：日付,競馬場,レース番号,レース名,芝ダート,距離,馬場,馬番,馬名,騎手,単勝オッズ。期待値判定には同一レースの全出走馬の単勝オッズが必要です。</p>
+</div>
 <div class="card">
 <h2>レースデータ取り込み・穴馬スコア</h2>
 <p class="stat">手元のCSVを採点する機能です。自動で出走表やオッズを取得するものではありません。空欄は推測で埋めず、データ充足率に反映します。</p>
@@ -100,12 +109,72 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 </div>
 <footer>これは画面と操作を確認するための試作版です。実際の予想には、出走表・過去成績・オッズ等の正規利用可能なデータ連携が必要です。AIの予想や回収率は保証されません。馬券購入は無理のない範囲で。</footer>
 </main>
+<script src="./value-model.js"></script>
 <script>
 let mode='大穴型',spent=0,returned=0,records=0,lastRankRows=[];
 document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.mode;document.querySelectorAll('.mode').forEach(x=>x.classList.toggle('active',x===b));}));
 const yen=n=>'¥'+Number(n).toLocaleString('ja-JP');
 const parseCsvLine=line=>{const a=[];let v='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'&&line[i+1]==='"'&&q){v+='"';i++;}else if(ch==='"'){q=!q;}else if(ch===','&&!q){a.push(v.trim());v='';}else v+=ch;}a.push(v.trim());return a;};
 const downloadCsv=(name,rows)=>{const csv=rows.map(row=>row.map(v=>{const t=String(v??'');return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;}).join(',')).join('\n');const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);};
+
+document.getElementById('runValueAi').addEventListener('click',async()=>{
+ const out=document.getElementById('valueAiResult');
+ const historyFile=document.getElementById('historyCsv').files[0];
+ const entryFile=document.getElementById('entryCsv').files[0];
+ if(!historyFile||!entryFile){out.textContent='過去成績CSVと今回の出走表CSVの両方を選択してください。';return;}
+ if(!window.UMAIValueModel){out.textContent='分析エンジンを読み込めませんでした。ページを再読み込みしてください。';return;}
+ const read=async file=>(await file.text()).replace(/^\uFEFF/,'').trim();
+ const parse=raw=>{
+  const lines=raw.split(/\r?\n/).filter(Boolean);
+  if(lines.length<2)throw new Error('CSVにデータ行がありません。');
+  const headers=parseCsvLine(lines[0]).map(x=>x.trim());
+  return lines.slice(1).map(line=>{
+   const cells=parseCsvLine(line),row={};
+   headers.forEach((h,i)=>row[h]=cells[i]??'');
+   return row;
+  }).filter(row=>Object.values(row).some(v=>String(v).trim()!==''));
+ };
+ const pick=(row,...keys)=>{for(const k of keys)if(row[k]!=null&&String(row[k]).trim()!=='')return row[k];return '';};
+ const num=v=>v===''||v==null||!Number.isFinite(Number(String(v).replace(/,/g,'')))?null:Number(String(v).replace(/,/g,''));
+ try{
+  out.textContent='過去成績を読み込み、時系列で採点しています…';
+  const historyRows=parse(await read(historyFile));
+  const entryRows=parse(await read(entryFile));
+  const history=UMAIValueModel.prepareHistory(historyRows);
+  if(!history.rows.length)throw new Error('過去成績CSVの列名を認識できません。JRA年度別成績CSVの形式を確認してください。');
+  const calibration=UMAIValueModel.buildWalkForwardCalibration(history,{minStarts:3,minSamples:200});
+  const entrants=entryRows.map(row=>({
+   date:pick(row,'日付','date'),venue:pick(row,'競馬場','開催','venue'),
+   raceNo:pick(row,'レース番号','R','race_no'),raceName:pick(row,'レース名','race_name'),
+   surface:pick(row,'芝ダート','芝・ダート','surface'),distance:pick(row,'距離','distance'),
+   going:pick(row,'馬場','馬場状態','going'),horseNo:pick(row,'馬番','馬番号','horse_no'),
+   horse:pick(row,'馬名','horse'),jockey:pick(row,'騎手','騎手名','jockey'),
+   odds:num(pick(row,'単勝オッズ','オッズ','odds'))
+  })).filter(h=>h.horse&&h.date&&h.venue&&h.raceNo);
+  if(!entrants.length)throw new Error('出走表に日付・競馬場・レース番号・馬名が必要です。');
+  const scored=entrants.map(h=>Object.assign(h,UMAIValueModel.scoreHorse(h,history,h.date)));
+  const groups=new Map();
+  scored.forEach(h=>{const key=[h.date,h.venue,h.raceNo].join('|');if(!groups.has(key))groups.set(key,[]);groups.get(key).push(h);});
+  const results=[];
+  groups.forEach((horses,key)=>results.push({key,horses:UMAIValueModel.evaluateRaceValue(horses,calibration)}));
+  results.sort((a,b)=>{
+   const av=a.horses.filter(h=>h.valueCandidate).length,bv=b.horses.filter(h=>h.valueCandidate).length;
+   return bv-av||(Math.max(...b.horses.map(h=>h.score??-1))-Math.max(...a.horses.map(h=>h.score??-1)));
+  });
+  const summary='過去成績：'+history.rows.length.toLocaleString('ja-JP')+'頭分 / '+history.raceCount.toLocaleString('ja-JP')+'レース\n出走表：'+entrants.length+'頭 / '+groups.size+'レース\n勝率校正：'+(calibration.ready?'完了（'+calibration.sampleCount+'サンプル）':'未完了（'+calibration.sampleCount+'サンプル・200必要）');
+  const details=results.map((r,i)=>{
+   const candidates=r.horses.filter(h=>h.valueCandidate);
+   const sorted=[...r.horses].sort((a,b)=>(b.score??-1)-(a.score??-1));
+   return (i+1)+'. '+r.key.replace(/\|/g,' / ')+'｜Value候補 '+candidates.length+'頭\n'+sorted.map(h=>{
+    const e=h.evidence||{},proof='近走'+e.recentStarts+'走・同場'+e.courseStarts+'走・同距離'+e.distanceStarts+'走';
+    const value=h.valueAvailable?'勝率推定'+(h.estimatedWinProbability*100).toFixed(1)+'% / 市場比'+(h.valueEdge*100).toFixed(1)+'pt':'期待値判定不可（'+(h.valueReason||'データ不足')+'）';
+    return '  '+(h.horseNo?h.horseNo+'番 ':'')+h.horse+'｜'+(h.score==null?'採点不可':h.score+'点')+'｜充足'+h.coverage+'%｜'+proof+'｜'+value+(h.valueCandidate?' ★Value候補':'');
+   }).join('\n');
+  }).join('\n\n');
+  out.textContent=summary+'\n\n'+(calibration.ready?'':'※校正データ不足のため、今回は能力・適性スコアのみ表示します。')+'\n\n'+details+'\n\n※暫定モデルです。回収率を保証するものではありません。時系列の別期間検証が必要です。';
+ }catch(error){out.textContent='分析できませんでした：'+error.message;}
+});
+
 
 document.getElementById('downloadTemplate').addEventListener('click',()=>{
  const csv='レース,馬番,馬名,単勝オッズ,人気,能力(1〜5),近走(1〜5),展開適性(1〜5),コース適性(1〜5),騎手評価(1〜5)\n東京1R,3,サンプル馬,18.5,9,4,4,3,4,3\n';
