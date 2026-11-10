@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="UMA AI">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<title>UMA AI - 競馬予想</title>
+<style>
+:root{color-scheme:dark;--bg:#101827;--panel:#1b2638;--muted:#a9b5c7;--line:#344258;--gold:#e4b65e;--green:#65c99a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f5f7fb;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
+main{max-width:520px;margin:auto;padding:20px 16px 40px}
+header{display:flex;align-items:center;justify-content:space-between;margin:8px 0 20px}
+h1{font-size:27px;margin:0;letter-spacing:.04em}small,.muted{color:var(--muted)}
+.pill{border:1px solid var(--line);border-radius:99px;padding:6px 10px;font-size:12px;color:var(--green)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}
+h2{font-size:16px;margin:0 0 12px}
+label{display:block;font-size:13px;color:var(--muted);margin:12px 0 6px}
+select,input{width:100%;background:#111c2c;color:white;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:16px}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+button{background:#26364d;color:#fff;border:1px solid var(--line);padding:12px 8px;border-radius:11px;font-size:14px}
+button.active{border-color:var(--gold);background:#463b28;color:#ffe0a1}
+.primary{width:100%;background:var(--gold);color:#1a1a1a;font-weight:700;border:0;margin-top:14px;padding:14px}
+.result{line-height:1.7;white-space:pre-line}
+.row{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.stat{font-size:12px;color:var(--muted)}.horse{padding:10px 0;border-bottom:1px solid var(--line)}.horse:last-child{border:0}
+footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
+</style>
+</head>
+<body>
+<main>
+<header><div><h1>UMA AI</h1><small>MY PERSONAL RACING ASSISTANT</small></div><span class="pill">試作版</span></header>
+<div class="card">
+<h2>レース設定</h2>
+<label for="race">開催・レース</label>
+<select id="race"><option>東京 11R</option><option>京都 11R</option><option>福島 11R</option><option>レース情報をあとで入力</option></select>
+<label for="raceName">レース名（任意）</label><input id="raceName" placeholder="例：エリザベス女王杯">
+<label>予想モード</label>
+<div class="modes">
+<button class="mode" data-mode="堅実型">堅実型</button>
+<button class="mode active" data-mode="大穴型">大穴型</button>
+<button class="mode" data-mode="バランス型">バランス型</button>
+</div>
+<label for="budget">予算（円）</label><input id="budget" type="number" min="100" step="100" value="1000">
+<label for="ticket">買い方</label>
+<select id="ticket"><option>AIに選ばせる</option><option>3連単</option><option>3連複</option><option>馬単</option><option>馬連</option><option>ワイド</option></select>
+<button class="primary" id="make">買い目プランを作る</button>
+</div>
+<div class="card">
+<div class="row"><h2>買い目プラン</h2><span class="stat" id="status">入力待ち</span></div>
+<div id="result" class="result muted">設定して「買い目プランを作る」を押してください。\nこの試作版は操作確認用で、実際の出走馬・オッズを取得した予想ではありません。</div>
+</div>
+
+<div class="card">
+<h2>全レース・スカウター</h2>
+<p class="stat">重賞に限らず、平場・特別戦を含めて注目レースを絞り込む機能</p>
+<label for="scope">対象</label>
+<select id="scope"><option>中央競馬・全開催場</option><option>東京</option><option>京都</option><option>福島</option></select>
+<label for="focus">発掘したいレース</label>
+<select id="focus"><option>高配当の穴狙い</option><option>的中率とのバランス</option><option>堅実に狙えるレース</option></select>
+<button class="primary" id="scan">おすすめレースを探す</button>
+<div id="scanResult" class="result muted" style="margin-top:12px">条件を選んでスカウターを実行してください。</div>
+</div>
+
+<div class="card">
+<h2>レースデータ取り込み（無料テスト）</h2>
+<p class="stat">CSVを読み込むと、複数レースを簡易スコア順に並べます。ライブの出走表を自動取得する機能ではありません。</p>
+<label for="csvFile">競馬データCSV</label><input id="csvFile" type="file" accept=".csv,text/csv">
+<button class="primary" id="rankCsv">読み込んだデータをランキング</button>
+<div id="csvResult" class="result muted" style="margin-top:12px">CSVを選択してください。</div>
+<p class="stat">列：レース,馬名,単勝オッズ,能力(1〜5),展開適性(1〜5),コース適性(1〜5)</p>
+</div>
+<div class="card">
+<h2>成績メモ</h2>
+<div class="row"><span class="muted">購入額合計</span><strong id="spent">¥0</strong></div>
+<div class="row"><span class="muted">払戻合計</span><strong id="returned">¥0</strong></div>
+<label for="payout">レース後の払戻金を入力</label><input id="payout" type="number" min="0" step="100" value="0">
+<button id="save">今回の記録を保存</button>
+<p class="stat" id="history">記録：0件</p>
+</div>
+<footer>これは画面と操作を確認するための試作版です。実際の予想には、出走表・過去成績・オッズ等の正規利用可能なデータ連携が必要です。AIの予想や回収率は保証されません。馬券購入は無理のない範囲で。</footer>
+</main>
+<script>
+let mode='大穴型',spent=0,returned=0,records=0;
+document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.mode;document.querySelectorAll('.mode').forEach(x=>x.classList.toggle('active',x===b));}));
+const yen=n=>'¥'+Number(n).toLocaleString('ja-JP');
+
+
+document.getElementById('rankCsv').addEventListener('click',async()=>{
+ const file=document.getElementById('csvFile').files[0], out=document.getElementById('csvResult');
+ if(!file){out.textContent='先にCSVファイルを選択してください。';return;}
+ try{
+  const lines=(await file.text()).replace(/^\uFEFF/,'').trim().split(/\r?\n/);
+  const rows=lines.slice(1).map(line=>{const c=line.split(',').map(x=>x.trim());return {race:c[0],horse:c[1],odds:Number(c[2]),ability:Number(c[3]),pace:Number(c[4]),course:Number(c[5])};}).filter(x=>x.race&&x.horse&&x.odds>0);
+  if(!rows.length){out.textContent='データを読み込めません。テンプレートの列順を確認してください。';return;}
+  const races={};
+  rows.forEach(x=>{x.score=Math.round((x.ability*.4+x.pace*.3+x.course*.3)*20);(races[x.race]??=[]).push(x);});
+  const ranked=Object.entries(races).map(([race,hs])=>{hs.sort((a,b)=>b.score-a.score);const avg=hs.reduce((s,h)=>s+h.score,0)/hs.length;const long=hs.filter(h=>h.odds>=10&&h.score>=65);return {race,hs,score:Math.min(100,Math.round(avg+long.length*5)),long};}).sort((a,b)=>b.score-a.score);
+  out.textContent='【おすすめレースランキング（入力データによる仮スコア）】\\n'+ranked.map((r,i)=>`${i+1}位 ${r.race}｜注目スコア ${r.score}｜穴候補 ${r.long.length}頭\\n上位馬：${r.hs.slice(0,3).map(h=>h.horse+'('+h.score+'点・'+h.odds+'倍)').join('、')}`).join('\\n\\n')+'\\n\\n※入力値による簡易評価です。実際の勝率・期待値を示すものではありません。';
+ }catch(e){out.textContent='CSVの読み込みに失敗しました。テンプレート形式を確認してください。';}
+});
+
+document.getElementById('scan').addEventListener('click',()=>{
+ const scope=document.getElementById('scope').value;
+ const focus=document.getElementById('focus').value;
+ document.getElementById('scanResult').textContent=
+ `対象：${scope}\n方針：${focus}\n\n【スカウターの評価項目】\n・出走馬の能力と近走内容\n・想定ペースと脚質の相性\n・枠順、馬場、コース適性\n・オッズとAI評価のギャップ\n・人気薄の好走条件\n\n現在は実データ未接続のため、候補レースの順位付けはまだ行いません。データ連携後は全レースを採点し、注目度順に表示します。`;
+});
+
+document.getElementById('make').addEventListener('click',()=>{
+ const budget=Math.max(100,Math.floor(Number(document.getElementById('budget').value||100)/100)*100);
+ const race=document.getElementById('race').value, name=document.getElementById('raceName').value.trim();
+ const ticket=document.getElementById('ticket').value;
+ let text=`${race}${name?' / '+name:''}\nモード：${mode}\n予算：${yen(budget)}\n券種：${ticket}\n\n【次のステップ】\n出走表とオッズを取り込んでいないため、馬番や買い目はまだ算出していません。\n\n実データ連携後に、各馬の評価・穴候補・展開予測を行い、100円単位で買い目を配分します。`;
+ document.getElementById('result').textContent=text;
+ document.getElementById('status').textContent='プラン設定済み';
+ spent=budget;document.getElementById('spent').textContent=yen(spent);
+});
+document.getElementById('save').addEventListener('click',()=>{
+ const p=Math.max(0,Number(document.getElementById('payout').value||0));
+ returned+=p;records++;document.getElementById('returned').textContent=yen(returned);
+ document.getElementById('history').textContent=`記録：${records}件 / 累計収支：${yen(returned-spent)}`;
+});
+</script>
+<script>
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.error));
+}
+</script>
+</body></html>
