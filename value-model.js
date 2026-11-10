@@ -87,7 +87,7 @@
       const fieldSize = group.length;
       group.forEach(r => {
         r.fieldSize = fieldSize;
-        r.performance = fieldSize > 1
+        r.performance = fieldSize > 1 && r.finish != null
           ? ((fieldSize - r.finish + 0.5) / fieldSize) * 100
           : null;
       });
