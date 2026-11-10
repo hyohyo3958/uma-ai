@@ -78,9 +78,17 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <p class="stat">手元のCSVを採点する機能です。自動で出走表やオッズを取得するものではありません。空欄は推測で埋めず、データ充足率に反映します。</p>
 <label for="csvFile">競馬データCSV</label><input id="csvFile" type="file" accept=".csv,text/csv">
 <button class="primary" id="rankCsv">読み込んだデータをランキング</button>
-<button id="downloadTemplate" style="width:100%;margin-top:8px">入力用CSVテンプレートを保存</button>\n<button id="exportScored" style="width:100%;margin-top:8px" disabled>採点結果CSVを保存</button>
+<button id="downloadTemplate" style="width:100%;margin-top:8px">入力用CSVテンプレートを保存</button>
+<button id="exportScored" style="width:100%;margin-top:8px" disabled>採点結果CSVを保存</button>
 <div id="csvResult" class="result muted" style="margin-top:12px">CSVを選択してください。</div>
 <p class="stat">推奨列：レース,馬番,馬名,単勝オッズ,人気,能力(1〜5),近走(1〜5),展開適性(1〜5),コース適性(1〜5),騎手評価(1〜5)。馬番・人気・騎手評価は任意。近走は直近の成績を総合して1〜5で入力（5が好調）。旧6列CSVにも対応。</p>
+</div>
+<div class="card">
+<h2>過去レース検証・回収率分析</h2>
+<p class="stat">採点結果CSVにレース後の着順と単勝払戻（100円あたり）を追記して読み込むと、上位評価馬の成績を検証します。</p>
+<label for="backtestFile">着順を追記したCSV</label><input id="backtestFile" type="file" accept=".csv,text/csv">
+<button class="primary" id="runBacktest">検証・回収率を計算</button>
+<div id="backtestResult" class="result muted" style="margin-top:12px">まず採点結果CSVを保存し、レース後に「着順」「単勝払戻(100円)」を入力してください。</div>
 </div>
 <div class="card">
 <h2>成績メモ</h2>
@@ -96,107 +104,92 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 let mode='大穴型',spent=0,returned=0,records=0,lastRankRows=[];
 document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.mode;document.querySelectorAll('.mode').forEach(x=>x.classList.toggle('active',x===b));}));
 const yen=n=>'¥'+Number(n).toLocaleString('ja-JP');
-
+const parseCsvLine=line=>{const a=[];let v='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'&&line[i+1]==='"'&&q){v+='"';i++;}else if(ch==='"'){q=!q;}else if(ch===','&&!q){a.push(v.trim());v='';}else v+=ch;}a.push(v.trim());return a;};
+const downloadCsv=(name,rows)=>{const csv=rows.map(row=>row.map(v=>{const t=String(v??'');return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;}).join(',')).join('\n');const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);};
 
 document.getElementById('downloadTemplate').addEventListener('click',()=>{
- const csv='レース,馬番,馬名,単勝オッズ,人気,能力(1〜5),近走(1〜5),展開適性(1〜5),コース適性(1〜5),騎手評価(1〜5)\\n東京1R,3,サンプル馬,18.5,9,4,4,3,4,3\\n';
- const blob=new Blob(['\\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
- const url=URL.createObjectURL(blob),a=document.createElement('a');
- a.href=url;a.download='uma-ai-template.csv';a.click();URL.revokeObjectURL(url);
+ const csv='レース,馬番,馬名,単勝オッズ,人気,能力(1〜5),近走(1〜5),展開適性(1〜5),コース適性(1〜5),騎手評価(1〜5)\n東京1R,3,サンプル馬,18.5,9,4,4,3,4,3\n';
+ downloadCsv('uma-ai-template.csv',[csv.trim().split('\n')[0].split(','),csv.trim().split('\n')[1].split(',')]);
 });
 
-const downloadCsv=(name,rows)=>{const csv=rows.map(row=>row.map(v=>{const t=String(v??'');return /[",\\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;}).join(',')).join('\\n');const blob=new Blob(['\\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);};
 document.getElementById('exportScored').addEventListener('click',()=>{
  if(!lastRankRows.length)return;
  downloadCsv('uma-ai-scored-results.csv',[['レース','馬番','馬名','仮スコア','単勝オッズ','着順','単勝払戻(100円)'],...lastRankRows.map(h=>[h.race,h.no||'',h.horse,h.score??'',h.odds??'','',''])]);
 });
+
 document.getElementById('rankCsv').addEventListener('click',async()=>{
  const file=document.getElementById('csvFile').files[0],out=document.getElementById('csvResult');
  if(!file){out.textContent='先にCSVファイルを選択してください。';return;}
  try{
-  const raw=(await file.text()).replace(/^\\uFEFF/,'').trim();
-  const parseLine=line=>{const a=[];let v='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'&&line[i+1]==='"'&&q){v+='"';i++;}else if(ch==='"'){q=!q;}else if(ch===','&&!q){a.push(v.trim());v='';}else v+=ch;}a.push(v.trim());return a;};
-  const lines=raw.split(/\\r?\\n/).filter(Boolean),head=parseLine(lines[0]).map(x=>x.replace(/^"|"$/g,'').trim());
+  const raw=(await file.text()).replace(/^\uFEFF/,'').trim();
+  const lines=raw.split(/\r?\n/).filter(Boolean),head=parseCsvLine(lines[0]).map(x=>x.replace(/^"|"$/g,'').trim());
   const find=(...names)=>head.findIndex(h=>names.some(n=>h.toLowerCase()===n.toLowerCase()));
   const ix={race:find('レース','race'),no:find('馬番','馬番号','horse_no'),horse:find('馬名','horse'),odds:find('単勝オッズ','オッズ','odds'),pop:find('人気','人気順','popularity'),ability:find('能力(1〜5)','能力','ability'),recent:find('近走(1〜5)','近走','recent'),pace:find('展開適性(1〜5)','展開適性','pace'),course:find('コース適性(1〜5)','コース適性','course'),jockey:find('騎手評価(1〜5)','騎手評価','jockey')};
   if(ix.race<0||ix.horse<0){out.textContent='「レース」「馬名」の列が必要です。テンプレートを使うか、列名を確認してください。';return;}
   const num=(c,i)=>i<0||!c[i]||!Number.isFinite(Number(c[i]))?null:Number(c[i]);
-  const rows=lines.slice(1).map(line=>{const c=parseLine(line);return {race:c[ix.race],no:ix.no<0?null:c[ix.no],horse:c[ix.horse],odds:num(c,ix.odds),pop:num(c,ix.pop),ability:num(c,ix.ability),recent:num(c,ix.recent),pace:num(c,ix.pace),course:num(c,ix.course),jockey:num(c,ix.jockey)};}).filter(x=>x.race&&x.horse);
+  const rows=lines.slice(1).map(line=>{const c=parseCsvLine(line);return {race:c[ix.race],no:ix.no<0?null:c[ix.no],horse:c[ix.horse],odds:num(c,ix.odds),pop:num(c,ix.pop),ability:num(c,ix.ability),recent:num(c,ix.recent),pace:num(c,ix.pace),course:num(c,ix.course),jockey:num(c,ix.jockey)};}).filter(x=>x.race&&x.horse);
   if(!rows.length){out.textContent='有効な馬データがありません。';return;}
   const factors=[['能力','ability',.30],['近走','recent',.30],['展開','pace',.20],['コース','course',.15],['騎手','jockey',.05]];
   rows.forEach(h=>{
    const used=factors.filter(f=>h[f[1]]!==null&&h[f[1]]>=1&&h[f[1]]<=5);
-   h.completeness=Math.round(used.reduce((s,f)=>s+f[2],0)*100);
-   h.score=used.length>=2?Math.round(used.reduce((s,f)=>s+(h[f[1]]-1)*25*f[2],0)/used.reduce((s,f)=>s+f[2],0)):null;
-   h.gap=(h.score!==null&&h.odds!==null&&h.odds>=10)?Math.round(h.score-(h.pop!==null?Math.max(0,100-(h.pop-1)*8):Math.max(0,100-Math.log2(h.odds)*12))):null;
+   const total=used.reduce((sum,f)=>sum+f[2],0);
+   h.completeness=Math.round(total*100);
+   h.score=used.length>=2?Math.round(used.reduce((sum,f)=>sum+(h[f[1]]-1)*25*f[2],0)/total):null;
    h.longshot=h.score!==null&&h.completeness>=50&&h.odds!==null&&h.odds>=10&&h.score>=65;
   });
-  lastRankRows=rows;document.getElementById('exportScored').disabled=false;\n  const races={};rows.forEach(h=>(races[h.race]??=[]).push(h));
+  lastRankRows=rows;
+  document.getElementById('exportScored').disabled=false;
+  const races={};rows.forEach(h=>(races[h.race]??=[]).push(h));
   const ranked=Object.entries(races).map(([race,hs])=>{
    const valid=hs.filter(h=>h.score!==null),long=valid.filter(h=>h.longshot);
-   const avg=valid.length?Math.round(valid.reduce((s,h)=>s+h.score,0)/valid.length):null;
-   const complete=hs.length?Math.round(hs.reduce((s,h)=>s+h.completeness,0)/hs.length):0;
+   const avg=valid.length?Math.round(valid.reduce((sum,h)=>sum+h.score,0)/valid.length):null;
+   const complete=hs.length?Math.round(hs.reduce((sum,h)=>sum+h.completeness,0)/hs.length):0;
    const rating=valid.length<3||complete<40?'C':long.length>=2?'A':long.length===1?'B':'C';
    return {race,hs:hs.sort((a,b)=>(b.score??-1)-(a.score??-1)),long,avg,complete,rating};
   }).sort((a,b)=>(b.long.length-a.long.length)||(b.avg??-1)-(a.avg??-1));
-  const linesOut=ranked.map((r,i)=>{
-   const detail=r.hs.slice(0,5).map(h=>{const s=h.score===null?'採点不可':h.score+'点';const odds=h.odds===null?'オッズ未入力':h.odds+'倍';const pop=h.pop===null?'人気不明':h.pop+'番人気';const mark=h.longshot?' ★穴候補':'';return '  '+(h.no?'['+h.no+'番] ':'')+h.horse+'｜'+s+'｜'+odds+'｜'+pop+'｜データ'+h.completeness+'%'+mark;}).join('\\n');
-   return (i+1)+'. '+r.race+'｜評価 '+r.rating+'｜穴候補 '+r.long.length+'頭｜平均 '+(r.avg===null?'算出不可':r.avg+'点')+'｜充足率 '+r.complete+'%\\n'+detail;
-  });
-  out.textContent='【レース別スカウター】\\n'+linesOut.join('\\n\\n')+'\\n\\n評価：A=穴候補が複数、B=穴候補あり、C=候補少数またはデータ不足。★はスコア65点以上・オッズ10倍以上・充足率50%以上の仮条件。能力スコアと市場人気の差は参考表示で、勝率や期待値を意味しません。欠損データは補完していません。';
+  out.textContent='【レース別スカウター】\n'+ranked.map((r,i)=>{
+   const detail=r.hs.slice(0,5).map(h=>'  '+(h.no?'['+h.no+'番] ':'')+h.horse+'｜'+(h.score===null?'採点不可':h.score+'点')+'｜'+(h.odds===null?'オッズ未入力':h.odds+'倍')+'｜データ'+h.completeness+'%'+(h.longshot?' ★穴候補':'')).join('\n');
+   return (i+1)+'. '+r.race+'｜評価 '+r.rating+'｜穴候補 '+r.long.length+'頭｜平均 '+(r.avg===null?'算出不可':r.avg+'点')+'｜充足率 '+r.complete+'%\n'+detail;
+  }).join('\n\n')+'\n\nA=穴候補複数、B=穴候補あり、C=候補少数またはデータ不足。★は仮条件による候補です。勝率・期待値を示すものではありません。欠損データは補完していません。';
  }catch(e){out.textContent='CSVの読み込みに失敗しました。テンプレート形式と文字コードを確認してください。';}
 });
-
 
 document.getElementById('runBacktest').addEventListener('click',async()=>{
  const file=document.getElementById('backtestFile').files[0],out=document.getElementById('backtestResult');
  if(!file){out.textContent='着順を追記したCSVを選択してください。';return;}
  try{
-  const raw=(await file.text()).replace(/^\\uFEFF/,'').trim();
-  const parse=line=>{const a=[];let v='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'&&line[i+1]==='"'&&q){v+='"';i++;}else if(ch==='"')q=!q;else if(ch===','&&!q){a.push(v.trim());v='';}else v+=ch;}a.push(v.trim());return a;};
-  const lines=raw.split(/\\r?\\n/).filter(Boolean),head=parse(lines[0]);
-  const col=(...names)=>head.findIndex(h=>names.includes(h.trim()));
-  const ix={race:col('レース'),horse:col('馬名'),score:col('仮スコア','スコア'),finish:col('着順'),odds:col('単勝オッズ'),payout:col('単勝払戻(100円)')};
-  if(Object.values(ix).some(i=>i<0)){out.textContent='必要な列（レース、馬名、仮スコア、単勝オッズ、着順、単勝払戻(100円)）がそろっていません。採点結果CSVを使ってください。';return;}
-  const data=lines.slice(1).map(line=>{const c=parse(line);return {race:c[ix.race],horse:c[ix.horse],score:Number(c[ix.score]),finish:Number(c[ix.finish]),odds:Number(c[ix.odds]),payout:Number(c[ix.payout])};}).filter(x=>x.race&&x.horse&&Number.isFinite(x.score)&&Number.isFinite(x.finish)&&x.finish>0);
+  const raw=(await file.text()).replace(/^\uFEFF/,'').trim();
+  const lines=raw.split(/\r?\n/).filter(Boolean),head=parseCsvLine(lines[0]);
+  const col=name=>head.findIndex(h=>h.trim()===name);
+  const ix={race:col('レース'),horse:col('馬名'),score:col('仮スコア'),finish:col('着順'),odds:col('単勝オッズ'),payout:col('単勝払戻(100円)')};
+  if(Object.values(ix).some(i=>i<0)){out.textContent='必要な列が不足しています。採点結果CSVを使ってください。';return;}
+  const data=lines.slice(1).map(line=>{const c=parseCsvLine(line);return {race:c[ix.race],horse:c[ix.horse],score:Number(c[ix.score]),finish:Number(c[ix.finish]),odds:Number(c[ix.odds]),payout:Number(c[ix.payout])};}).filter(h=>h.race&&h.horse&&Number.isFinite(h.score)&&Number.isFinite(h.finish)&&h.finish>0);
   const groups={};data.forEach(h=>(groups[h.race]??=[]).push(h));
   const races=Object.values(groups).filter(g=>g.length>=2);
   if(!races.length){out.textContent='着順が入力されたレースがありません。着順は1着=1、2着=2のように入力してください。';return;}
-  let topWins=0,top3Hit=0,top3Win=0,stake=0,returns=0,validPayout=0;
-  races.forEach(g=>{
-   g.sort((a,b)=>b.score-a.score);
-   const best=g[0];stake+=100;
-   if(best.finish===1){topWins++;if(Number.isFinite(best.payout)&&best.payout>0){returns+=best.payout;validPayout++;}else if(Number.isFinite(best.odds)&&best.odds>0){returns+=best.odds*100;}}
-   if(g.slice(0,3).some(h=>h.finish===1))top3Hit++;
-   if(g.slice(0,3).some(h=>h.finish<=3))top3Win++;
-  });
+  let wins=0,top3Winner=0,top3Place=0,stake=0,returns=0;
+  races.forEach(g=>{g.sort((a,b)=>b.score-a.score);const best=g[0];stake+=100;if(best.finish===1){wins++;returns+=best.payout>0?best.payout:(best.odds>0?best.odds*100:0);}if(g.slice(0,3).some(h=>h.finish===1))top3Winner++;if(g.slice(0,3).some(h=>h.finish<=3))top3Place++;});
   const roi=stake?returns/stake*100:0;
-  out.textContent='【検証結果】\\n対象レース：'+races.length+'\\n最高評価馬の1着率：'+(topWins/races.length*100).toFixed(1)+'%（'+topWins+'レース）\\n上位3頭に勝ち馬：'+(top3Hit/races.length*100).toFixed(1)+'%（'+top3Hit+'レース）\\n上位3頭に3着以内：'+(top3Win/races.length*100).toFixed(1)+'%（'+top3Win+'レース）\\n\\n【単勝100円・最高評価馬を各レース購入した仮集計】\\n投資額：'+yen(stake)+'\\n払戻：'+yen(Math.round(returns))+'\\n回収率：'+roi.toFixed(1)+'%\\n収支：'+yen(Math.round(returns-stake))+'\\n\\n※単勝払戻が空欄の的中レースは入力オッズ×100円で概算します。正式な回収率には公式払戻額を入力してください。過去データの成績は将来の的中を保証しません。';
+  out.textContent='【検証結果】\n対象レース：'+races.length+'\n最高評価馬の1着率：'+(wins/races.length*100).toFixed(1)+'%（'+wins+'レース）\n上位3頭に勝ち馬：'+(top3Winner/races.length*100).toFixed(1)+'%（'+top3Winner+'レース）\n上位3頭に3着以内：'+(top3Place/races.length*100).toFixed(1)+'%（'+top3Place+'レース）\n\n【単勝100円・最高評価馬を各レース購入した仮集計】\n投資額：'+yen(stake)+'\n払戻：'+yen(Math.round(returns))+'\n回収率：'+roi.toFixed(1)+'%\n収支：'+yen(Math.round(returns-stake))+'\n\n※単勝払戻が空欄の的中レースは入力オッズ×100円で概算します。正式な回収率には公式払戻額を入力してください。';
  }catch(e){out.textContent='CSVを読み込めませんでした。採点結果CSVの形式を確認してください。';}
 });
 
 document.getElementById('scan').addEventListener('click',()=>{
- const scope=document.getElementById('scope').value;
- const focus=document.getElementById('focus').value;
- document.getElementById('scanResult').textContent=
- `対象：${scope}\n方針：${focus}\n\n【スカウターの評価項目】\n・出走馬の能力と近走内容\n・想定ペースと脚質の相性\n・枠順、馬場、コース適性\n・オッズとAI評価のギャップ\n・人気薄の好走条件\n\n現在は実データ未接続のため、候補レースの順位付けはまだ行いません。データ連携後は全レースを採点し、注目度順に表示します。`;
+ const scope=document.getElementById('scope').value,focus=document.getElementById('focus').value;
+ document.getElementById('scanResult').textContent='対象：'+scope+'\n方針：'+focus+'\n\n出走表・過去成績・オッズ等の実データが未接続のため、候補レースの順位付けはまだ行いません。';
 });
-
 document.getElementById('make').addEventListener('click',()=>{
  const budget=Math.max(100,Math.floor(Number(document.getElementById('budget').value||100)/100)*100);
- const race=document.getElementById('race').value, name=document.getElementById('raceName').value.trim();
- const ticket=document.getElementById('ticket').value;
- let text=`${race}${name?' / '+name:''}\nモード：${mode}\n予算：${yen(budget)}\n券種：${ticket}\n\n【次のステップ】\n出走表とオッズを取り込んでいないため、馬番や買い目はまだ算出していません。\n\n実データ連携後に、各馬の評価・穴候補・展開予測を行い、100円単位で買い目を配分します。`;
- document.getElementById('result').textContent=text;
- document.getElementById('status').textContent='プラン設定済み';
- spent=budget;document.getElementById('spent').textContent=yen(spent);
+ const race=document.getElementById('race').value,name=document.getElementById('raceName').value.trim(),ticket=document.getElementById('ticket').value;
+ document.getElementById('result').textContent=race+(name?' / '+name:'')+'\nモード：'+mode+'\n予算：'+yen(budget)+'\n券種：'+ticket+'\n\n出走表とオッズを取り込んでいないため、馬番や買い目は算出していません。';
+ document.getElementById('status').textContent='プラン設定済み';spent=budget;document.getElementById('spent').textContent=yen(spent);
 });
 document.getElementById('save').addEventListener('click',()=>{
- const p=Math.max(0,Number(document.getElementById('payout').value||0));
- returned+=p;records++;document.getElementById('returned').textContent=yen(returned);
- document.getElementById('history').textContent=`記録：${records}件 / 累計収支：${yen(returned-spent)}`;
+ const p=Math.max(0,Number(document.getElementById('payout').value||0));returned+=p;records++;
+ document.getElementById('returned').textContent=yen(returned);
+ document.getElementById('history').textContent='記録：'+records+'件 / 累計収支：'+yen(returned-spent);
 });
-</script>
+</script>>
 <script>
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.error));
