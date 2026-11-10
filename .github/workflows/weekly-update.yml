@@ -22,52 +22,22 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install schedule parser dependencies
-        run: python -m pip install requests beautifulsoup4
-
-      - name: Fetch JRA provisional race program
-        id: fetch_program
-        continue-on-error: true
-        run: python scripts/fetch_race_program.py
-
       - name: Write pipeline status
-        env:
-          FETCH_OUTCOME: ${{ steps.fetch_program.outcome }}
         run: |
           python - <<'PY'
           import json
-          import os
           from datetime import datetime, timezone
           from pathlib import Path
 
-          race_file = Path("data/weekend.json")
-          races = []
-          errors = []
-          if race_file.exists():
-              payload = json.loads(race_file.read_text(encoding="utf-8"))
-              races = payload.get("races", [])
-              errors = payload.get("errors", [])
-
-          successful = os.environ.get("FETCH_OUTCOME") == "success" and bool(races)
           status = {
               "app": "UMA AI",
-              "pipeline": "jra_race_program",
+              "pipeline": "free-and-permission-safe",
               "updated_at": datetime.now(timezone.utc).isoformat(),
-              "status": "provisional_program_ready" if successful else "schedule_fetch_incomplete",
-              "message": (
-                  f"JRA provisional schedule loaded: {len(races)} races. "
-                  "Entries, odds, and predictions are not connected."
-                  if successful else
-                  "The schedule fetch did not complete. Check data/weekend.json and workflow logs."
-              ),
-              "race_count": len(races),
+              "status": "waiting_for_verified_free_data_source",
+              "message": "Scheduled status check completed. Automatic race-data collection is paused until the source explicitly permits automated retrieval and reuse. No entries, odds, or predictions are currently available.",
+              "race_count": 0,
               "predictions_available": False,
-              "errors": errors
+              "data_source": None
           }
           Path("data").mkdir(exist_ok=True)
           Path("data/status.json").write_text(
@@ -76,14 +46,14 @@ jobs:
           )
           PY
 
-      - name: Commit generated data
+      - name: Commit status
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/weekend.json data/status.json
+          git add data/status.json
           if git diff --cached --quiet; then
             echo "No changes."
           else
-            git commit -m "Update UMA AI race program"
+            git commit -m "Update UMA AI safe pipeline status"
             git push
           fi
