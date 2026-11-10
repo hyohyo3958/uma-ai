@@ -34,6 +34,13 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <body>
 <main>
 <header><div><h1>UMA AI</h1><small>MY PERSONAL RACING ASSISTANT</small></div><span class="pill">試作版</span></header>
+<div class="card" id="liveDataCard">
+<div class="row"><h2>自動データ取得</h2><span class="pill" id="pipelineBadge">確認中</span></div>
+<p class="stat" id="pipelineMessage">最新の自動処理状況を確認しています。</p>
+<div id="weekendRaces" class="result muted">レース一覧はまだ登録されていません。</div>
+<p class="stat" style="margin-top:10px">データ未取得の項目は推測で補いません。出走表・オッズの自動取得はデータ提供元の利用条件を確認後に追加します。</p>
+<a href="https://www.jra.go.jp/keiba/calendar/" target="_blank" rel="noopener" style="color:var(--gold)">JRA公式開催日程を見る</a>
+</div>
 <div class="card">
 <h2>レース設定</h2>
 <label for="race">開催・レース</label>
