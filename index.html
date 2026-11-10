@@ -79,6 +79,7 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <label for="historyCsv">過去成績CSV（複数年分をまとめたもの）</label><input id="historyCsv" type="file" accept=".csv,text/csv">
 <label for="entryCsv">今回の出走表CSV（単勝オッズを含む）</label><input id="entryCsv" type="file" accept=".csv,text/csv">
 <button class="primary" id="runValueAi">Value AIで分析する</button>
+<button id="downloadEntryTemplate" style="width:100%;margin-top:8px">出走表CSVテンプレートを保存</button>
 <div id="valueAiResult" class="result muted" style="margin-top:12px">過去成績CSVと出走表CSVを選択してください。</div>
 <p class="stat">出走表の列名例：日付,競馬場,レース番号,レース名,芝ダート,距離,馬場,馬番,馬名,騎手,単勝オッズ。期待値判定には同一レースの全出走馬の単勝オッズが必要です。</p>
 </div>
@@ -117,6 +118,9 @@ const yen=n=>'¥'+Number(n).toLocaleString('ja-JP');
 const parseCsvLine=line=>{const a=[];let v='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'&&line[i+1]==='"'&&q){v+='"';i++;}else if(ch==='"'){q=!q;}else if(ch===','&&!q){a.push(v.trim());v='';}else v+=ch;}a.push(v.trim());return a;};
 const downloadCsv=(name,rows)=>{const csv=rows.map(row=>row.map(v=>{const t=String(v??'');return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;}).join(',')).join('\n');const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);};
 
+document.getElementById('downloadEntryTemplate').addEventListener('click',()=>{
+ downloadCsv('uma-ai-entry-template.csv',[['日付','競馬場','レース番号','レース名','芝ダート','距離','馬場','馬番','馬名','騎手','単勝オッズ']]);
+});
 document.getElementById('runValueAi').addEventListener('click',async()=>{
  const out=document.getElementById('valueAiResult');
  const historyFile=document.getElementById('historyCsv').files[0];
