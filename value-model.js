@@ -204,6 +204,28 @@
     return { ready: true, sampleCount: valid.length, globalRate, bins };
   }
 
+  function buildWalkForwardCalibration(history, options) {
+    const opts = Object.assign({ minStarts: 3, minSamples: 200 }, options || {});
+    const samples = [];
+    (history.rows || []).forEach(row => {
+      if (row.finish == null) return;
+      const scored = scoreHorse({
+        horse: row.horse,
+        venue: row.venue,
+        surface: row.surface,
+        distance: row.distance,
+        going: row.going,
+        jockey: row.jockey
+      }, history, row.date);
+      if (scored.score == null || scored.starts < opts.minStarts) return;
+      samples.push({ score: scored.score, finish: row.finish, date: row.date, horse: row.horse });
+    });
+    const calibration = calibrateWinProbability(samples, opts.minSamples);
+    calibration.method = "walk-forward";
+    calibration.minStarts = opts.minStarts;
+    return calibration;
+  }
+
   function evaluateRaceValue(scoredEntrants, calibration, options) {
     const opts = Object.assign({ minScore: 60, minCoverage: 60, minStarts: 3, minOdds: 5, minEdge: 0.10 }, options || {});
     const rows = (scoredEntrants || []).map(h => {
