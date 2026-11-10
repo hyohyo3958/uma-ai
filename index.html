@@ -78,7 +78,7 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <p class="stat">手元のCSVを採点する機能です。自動で出走表やオッズを取得するものではありません。空欄は推測で埋めず、データ充足率に反映します。</p>
 <label for="csvFile">競馬データCSV</label><input id="csvFile" type="file" accept=".csv,text/csv">
 <button class="primary" id="rankCsv">読み込んだデータをランキング</button>
-<button id="downloadTemplate" style="width:100%;margin-top:8px">入力用CSVテンプレートを保存</button>
+<button id="downloadTemplate" style="width:100%;margin-top:8px">入力用CSVテンプレートを保存</button>\n<button id="exportScored" style="width:100%;margin-top:8px" disabled>採点結果CSVを保存</button>
 <div id="csvResult" class="result muted" style="margin-top:12px">CSVを選択してください。</div>
 <p class="stat">推奨列：レース,馬番,馬名,単勝オッズ,人気,能力(1〜5),近走(1〜5),展開適性(1〜5),コース適性(1〜5),騎手評価(1〜5)。馬番・人気・騎手評価は任意。近走は直近の成績を総合して1〜5で入力（5が好調）。旧6列CSVにも対応。</p>
 </div>
@@ -93,7 +93,7 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <footer>これは画面と操作を確認するための試作版です。実際の予想には、出走表・過去成績・オッズ等の正規利用可能なデータ連携が必要です。AIの予想や回収率は保証されません。馬券購入は無理のない範囲で。</footer>
 </main>
 <script>
-let mode='大穴型',spent=0,returned=0,records=0;
+let mode='大穴型',spent=0,returned=0,records=0,lastRankRows=[];
 document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.mode;document.querySelectorAll('.mode').forEach(x=>x.classList.toggle('active',x===b));}));
 const yen=n=>'¥'+Number(n).toLocaleString('ja-JP');
 
@@ -105,6 +105,11 @@ document.getElementById('downloadTemplate').addEventListener('click',()=>{
  a.href=url;a.download='uma-ai-template.csv';a.click();URL.revokeObjectURL(url);
 });
 
+const downloadCsv=(name,rows)=>{const csv=rows.map(row=>row.map(v=>{const t=String(v??'');return /[",\\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;}).join(',')).join('\\n');const blob=new Blob(['\\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);};
+document.getElementById('exportScored').addEventListener('click',()=>{
+ if(!lastRankRows.length)return;
+ downloadCsv('uma-ai-scored-results.csv',[['レース','馬番','馬名','仮スコア','単勝オッズ','着順','単勝払戻(100円)'],...lastRankRows.map(h=>[h.race,h.no||'',h.horse,h.score??'',h.odds??'','',''])]);
+});
 document.getElementById('rankCsv').addEventListener('click',async()=>{
  const file=document.getElementById('csvFile').files[0],out=document.getElementById('csvResult');
  if(!file){out.textContent='先にCSVファイルを選択してください。';return;}
@@ -126,7 +131,7 @@ document.getElementById('rankCsv').addEventListener('click',async()=>{
    h.gap=(h.score!==null&&h.odds!==null&&h.odds>=10)?Math.round(h.score-(h.pop!==null?Math.max(0,100-(h.pop-1)*8):Math.max(0,100-Math.log2(h.odds)*12))):null;
    h.longshot=h.score!==null&&h.completeness>=50&&h.odds!==null&&h.odds>=10&&h.score>=65;
   });
-  const races={};rows.forEach(h=>(races[h.race]??=[]).push(h));
+  lastRankRows=rows;document.getElementById('exportScored').disabled=false;\n  const races={};rows.forEach(h=>(races[h.race]??=[]).push(h));
   const ranked=Object.entries(races).map(([race,hs])=>{
    const valid=hs.filter(h=>h.score!==null),long=valid.filter(h=>h.longshot);
    const avg=valid.length?Math.round(valid.reduce((s,h)=>s+h.score,0)/valid.length):null;
@@ -140,6 +145,34 @@ document.getElementById('rankCsv').addEventListener('click',async()=>{
   });
   out.textContent='【レース別スカウター】\\n'+linesOut.join('\\n\\n')+'\\n\\n評価：A=穴候補が複数、B=穴候補あり、C=候補少数またはデータ不足。★はスコア65点以上・オッズ10倍以上・充足率50%以上の仮条件。能力スコアと市場人気の差は参考表示で、勝率や期待値を意味しません。欠損データは補完していません。';
  }catch(e){out.textContent='CSVの読み込みに失敗しました。テンプレート形式と文字コードを確認してください。';}
+});
+
+
+document.getElementById('runBacktest').addEventListener('click',async()=>{
+ const file=document.getElementById('backtestFile').files[0],out=document.getElementById('backtestResult');
+ if(!file){out.textContent='着順を追記したCSVを選択してください。';return;}
+ try{
+  const raw=(await file.text()).replace(/^\\uFEFF/,'').trim();
+  const parse=line=>{const a=[];let v='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'&&line[i+1]==='"'&&q){v+='"';i++;}else if(ch==='"')q=!q;else if(ch===','&&!q){a.push(v.trim());v='';}else v+=ch;}a.push(v.trim());return a;};
+  const lines=raw.split(/\\r?\\n/).filter(Boolean),head=parse(lines[0]);
+  const col=(...names)=>head.findIndex(h=>names.includes(h.trim()));
+  const ix={race:col('レース'),horse:col('馬名'),score:col('仮スコア','スコア'),finish:col('着順'),odds:col('単勝オッズ'),payout:col('単勝払戻(100円)')};
+  if(Object.values(ix).some(i=>i<0)){out.textContent='必要な列（レース、馬名、仮スコア、単勝オッズ、着順、単勝払戻(100円)）がそろっていません。採点結果CSVを使ってください。';return;}
+  const data=lines.slice(1).map(line=>{const c=parse(line);return {race:c[ix.race],horse:c[ix.horse],score:Number(c[ix.score]),finish:Number(c[ix.finish]),odds:Number(c[ix.odds]),payout:Number(c[ix.payout])};}).filter(x=>x.race&&x.horse&&Number.isFinite(x.score)&&Number.isFinite(x.finish)&&x.finish>0);
+  const groups={};data.forEach(h=>(groups[h.race]??=[]).push(h));
+  const races=Object.values(groups).filter(g=>g.length>=2);
+  if(!races.length){out.textContent='着順が入力されたレースがありません。着順は1着=1、2着=2のように入力してください。';return;}
+  let topWins=0,top3Hit=0,top3Win=0,stake=0,returns=0,validPayout=0;
+  races.forEach(g=>{
+   g.sort((a,b)=>b.score-a.score);
+   const best=g[0];stake+=100;
+   if(best.finish===1){topWins++;if(Number.isFinite(best.payout)&&best.payout>0){returns+=best.payout;validPayout++;}else if(Number.isFinite(best.odds)&&best.odds>0){returns+=best.odds*100;}}
+   if(g.slice(0,3).some(h=>h.finish===1))top3Hit++;
+   if(g.slice(0,3).some(h=>h.finish<=3))top3Win++;
+  });
+  const roi=stake?returns/stake*100:0;
+  out.textContent='【検証結果】\\n対象レース：'+races.length+'\\n最高評価馬の1着率：'+(topWins/races.length*100).toFixed(1)+'%（'+topWins+'レース）\\n上位3頭に勝ち馬：'+(top3Hit/races.length*100).toFixed(1)+'%（'+top3Hit+'レース）\\n上位3頭に3着以内：'+(top3Win/races.length*100).toFixed(1)+'%（'+top3Win+'レース）\\n\\n【単勝100円・最高評価馬を各レース購入した仮集計】\\n投資額：'+yen(stake)+'\\n払戻：'+yen(Math.round(returns))+'\\n回収率：'+roi.toFixed(1)+'%\\n収支：'+yen(Math.round(returns-stake))+'\\n\\n※単勝払戻が空欄の的中レースは入力オッズ×100円で概算します。正式な回収率には公式払戻額を入力してください。過去データの成績は将来の的中を保証しません。';
+ }catch(e){out.textContent='CSVを読み込めませんでした。採点結果CSVの形式を確認してください。';}
 });
 
 document.getElementById('scan').addEventListener('click',()=>{
