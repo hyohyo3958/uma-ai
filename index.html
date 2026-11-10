@@ -189,7 +189,7 @@ document.getElementById('save').addEventListener('click',()=>{
  document.getElementById('returned').textContent=yen(returned);
  document.getElementById('history').textContent='記録：'+records+'件 / 累計収支：'+yen(returned-spent);
 });
-</script>>
+</script>
 <script>
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.error));
