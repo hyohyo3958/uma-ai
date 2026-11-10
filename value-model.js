@@ -210,10 +210,11 @@
       const odds = number(h.odds || h["単勝オッズ"]);
       return Object.assign({}, h, { odds });
     });
+    const oddsComplete = rows.length >= 2 && rows.every(h => h.odds != null && h.odds > 1);
     const inverseSum = rows.reduce((sum, h) => sum + (h.odds && h.odds > 1 ? 1 / h.odds : 0), 0);
     return rows.map(h => {
-      if (!calibration || !calibration.ready || h.score == null || !h.odds || h.odds <= 1 || !inverseSum) {
-        return Object.assign({}, h, { valueAvailable: false, valueCandidate: false });
+      if (!calibration || !calibration.ready || !oddsComplete || h.score == null || !h.odds || h.odds <= 1 || !inverseSum) {
+        return Object.assign({}, h, { valueAvailable: false, valueCandidate: false, valueReason: !oddsComplete ? "全出走馬のオッズが揃っていません。" : "校正済み確率または必要データが不足しています。" });
       }
       const bin = calibration.bins[Math.min(19, Math.floor(h.score / 5))];
       const marketProbability = (1 / h.odds) / inverseSum;
