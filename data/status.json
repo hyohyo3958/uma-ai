@@ -1,0 +1,8 @@
+{
+  "app": "UMA AI",
+  "pipeline": "starter",
+  "updated_at": "2026-11-10T06:53:45.995880+00:00",
+  "status": "waiting_for_authorized_racing_data",
+  "message": "The scheduled workflow ran. Live race data and predictions are not connected yet.",
+  "predictions_available": false
+}
