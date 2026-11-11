@@ -8,6 +8,7 @@ Build a free-first pipeline for all JRA central races (graded, special, and ordi
 - The app reads `data/status.json` and optionally `data/weekend.json`.
 - `data/weekend.schema.json` defines the normalized race-data format.
 - No live JRA race feed is connected yet. `predictions_available` must remain false until verified input data and a valid scoring pipeline exist.
+- Historical results CSVs can be imported in bulk through the app and are stored locally in the browser's IndexedDB. This does not fetch or publish JRA data automatically.
 
 ## Official public references
 - JRA race calendar: https://www.jra.go.jp/keiba/calendar/
