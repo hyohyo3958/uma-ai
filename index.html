@@ -76,7 +76,10 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <div class="card" id="valueAiCard">
 <h2>Value AI・過去成績から穴馬を発掘</h2>
 <p class="stat">JRA年度別成績PDFから作った過去成績CSVと、今回の出走表CSVを読み込みます。過去成績から直近成績・コース・距離・馬場・騎手を採点し、時系列検証で勝率を校正します。</p>
-<label for="historyCsv">過去成績CSV（複数年分をまとめたもの）</label><input id="historyCsv" type="file" accept=".csv,text/csv">
+<label for="historyCsv">過去成績CSV（複数選択またはoutputフォルダを選択）</label><input id="historyCsv" type="file" accept=".csv,text/csv" multiple webkitdirectory>
+<p class="stat">PDF変換ツールの output フォルダを選ぶか、複数CSVを選択できます。all_results.csvと個別CSVが重なっても自動で重複を除外します。</p>
+<button id="importHistoryFiles" style="width:100%;margin-top:8px">選択した履歴CSVを追加・保存</button>
+<p class="stat" id="historyStoreStatus" style="margin-top:8px">保存済みの過去成績を確認しています…</p>
 <label for="entryCsv">今回の出走表CSV（単勝オッズを含む）</label><input id="entryCsv" type="file" accept=".csv,text/csv">
 <button class="primary" id="runValueAi">Value AIで分析する</button>
 <button id="downloadEntryTemplate" style="width:100%;margin-top:8px">出走表CSVテンプレートを保存</button>
@@ -111,6 +114,7 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <footer>これは画面と操作を確認するための試作版です。実際の予想には、出走表・過去成績・オッズ等の正規利用可能なデータ連携が必要です。AIの予想や回収率は保証されません。馬券購入は無理のない範囲で。</footer>
 </main>
 <script src="./value-model.js"></script>
+<script src="./history-store.js"></script>
 <script>
 let mode='大穴型',spent=0,returned=0,records=0,lastRankRows=[];
 document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.mode;document.querySelectorAll('.mode').forEach(x=>x.classList.toggle('active',x===b));}));
@@ -121,31 +125,52 @@ const downloadCsv=(name,rows)=>{const csv=rows.map(row=>row.map(v=>{const t=Stri
 document.getElementById('downloadEntryTemplate').addEventListener('click',()=>{
  downloadCsv('uma-ai-entry-template.csv',[['日付','競馬場','レース番号','レース名','芝ダート','距離','馬場','馬番','馬名','騎手','単勝オッズ']]);
 });
+const historyInput=document.getElementById('historyCsv');
+const historyStoreStatus=document.getElementById('historyStoreStatus');
+async function refreshHistoryStoreStatus(){
+ if(!window.UMAIHistoryStore){historyStoreStatus.textContent='履歴保存機能を読み込めませんでした。ページを再読み込みしてください。';return;}
+ try{
+  const stats=await UMAIHistoryStore.getStats();
+  historyStoreStatus.textContent='このブラウザに保存済み：'+stats.rowCount.toLocaleString('ja-JP')+'頭分 / '+stats.raceCount.toLocaleString('ja-JP')+'レース。追加した履歴は次回も利用できます。';
+ }catch(e){historyStoreStatus.textContent='保存済み履歴を確認できません：'+e.message;}
+}
+historyInput.addEventListener('change',()=>{
+ const count=Array.from(historyInput.files||[]).filter(file=>/\.csv$/i.test(file.name||'')).length;
+ if(count)historyStoreStatus.textContent='今回選択：CSV '+count+'ファイル。追加・保存ボタン、または分析ボタンで取り込みます。';
+});
+document.getElementById('importHistoryFiles').addEventListener('click',async()=>{
+ const files=Array.from(historyInput.files||[]);
+ if(!files.length){historyStoreStatus.textContent='先にCSVファイルまたはoutputフォルダを選択してください。';return;}
+ historyStoreStatus.textContent='複数CSVを読み込み、重複を整理して保存しています…';
+ try{
+  const result=await UMAIHistoryStore.importFiles(files);
+  historyStoreStatus.textContent='追加・保存完了：'+result.fileCount+'ファイル / 元データ'+result.sourceRows.toLocaleString('ja-JP')+'行 / 重複'+result.duplicates.toLocaleString('ja-JP')+'行を整理。新規'+result.added.toLocaleString('ja-JP')+'頭、累計'+result.totalRows.toLocaleString('ja-JP')+'頭・'+result.raceCount.toLocaleString('ja-JP')+'レース。';
+ }catch(e){historyStoreStatus.textContent='取り込み失敗：'+e.message;}
+});
+refreshHistoryStoreStatus();
+
 document.getElementById('runValueAi').addEventListener('click',async()=>{
  const out=document.getElementById('valueAiResult');
- const historyFile=document.getElementById('historyCsv').files[0];
+ const selectedHistoryFiles=Array.from(historyInput.files||[]);
  const entryFile=document.getElementById('entryCsv').files[0];
- if(!historyFile||!entryFile){out.textContent='過去成績CSVと今回の出走表CSVの両方を選択してください。';return;}
- if(!window.UMAIValueModel){out.textContent='分析エンジンを読み込めませんでした。ページを再読み込みしてください。';return;}
- const read=async file=>(await file.text()).replace(/^\uFEFF/,'').trim();
- const parse=raw=>{
-  const lines=raw.split(/\r?\n/).filter(Boolean);
-  if(lines.length<2)throw new Error('CSVにデータ行がありません。');
-  const headers=parseCsvLine(lines[0]).map(x=>x.trim());
-  return lines.slice(1).map(line=>{
-   const cells=parseCsvLine(line),row={};
-   headers.forEach((h,i)=>row[h]=cells[i]??'');
-   return row;
-  }).filter(row=>Object.values(row).some(v=>String(v).trim()!==''));
- };
- const pick=(row,...keys)=>{for(const k of keys)if(row[k]!=null&&String(row[k]).trim()!=='')return row[k];return '';};
- const num=v=>v===''||v==null||!Number.isFinite(Number(String(v).replace(/,/g,'')))?null:Number(String(v).replace(/,/g,''));
+ if(!entryFile){out.textContent='今回の出走表CSVを選択してください。過去成績は保存済みデータを利用できます。';return;}
+ if(!window.UMAIValueModel||!window.UMAIHistoryStore){out.textContent='分析エンジンまたは履歴保存機能を読み込めませんでした。ページを再読み込みしてください。';return;}
  try{
-  out.textContent='過去成績を読み込み、時系列で採点しています…';
-  const historyRows=parse(await read(historyFile));
-  const entryRows=parse(await read(entryFile));
+  if(selectedHistoryFiles.some(file=>/\.csv$/i.test(file.name||''))){
+   out.textContent='選択した履歴CSVを追加し、保存済みの全履歴を読み込んでいます…';
+   await UMAIHistoryStore.importFiles(selectedHistoryFiles);
+   await refreshHistoryStoreStatus();
+  }else{
+   out.textContent='保存済みの全履歴を読み込んでいます…';
+  }
+  const historyRows=await UMAIHistoryStore.getRows();
+  if(!historyRows.length)throw new Error('過去成績がまだ保存されていません。PDF変換ツールのoutputフォルダ、またはall_results.csvを取り込んでください。');
+  const entryRows=UMAIHistoryStore.parseCSV((await entryFile.text()).replace(/^\uFEFF/,''));
+  const pick=(row,...keys)=>{for(const k of keys)if(row[k]!=null&&String(row[k]).trim()!=='')return row[k];return '';};
+  const num=v=>v===''||v==null||!Number.isFinite(Number(String(v).replace(/,/g,'')))?null:Number(String(v).replace(/,/g,''));
+  out.textContent='保存済み過去成績 '+historyRows.length.toLocaleString('ja-JP')+'行を分析用に準備しています…';
   const history=UMAIValueModel.prepareHistory(historyRows);
-  if(!history.rows.length)throw new Error('過去成績CSVの列名を認識できません。JRA年度別成績CSVの形式を確認してください。');
+  if(!history.rows.length)throw new Error('過去成績CSVの列名を認識できません。日付・競馬場・レース番号・馬名の列を確認してください。');
   const calibration=UMAIValueModel.buildWalkForwardCalibration(history,{minStarts:3,minSamples:200});
   const entrants=entryRows.map(row=>({
    date:pick(row,'日付','date'),venue:pick(row,'競馬場','開催','venue'),
@@ -153,9 +178,10 @@ document.getElementById('runValueAi').addEventListener('click',async()=>{
    surface:pick(row,'芝ダート','芝・ダート','surface'),distance:pick(row,'距離','distance'),
    going:pick(row,'馬場','馬場状態','going'),horseNo:pick(row,'馬番','馬番号','horse_no'),
    horse:pick(row,'馬名','horse'),jockey:pick(row,'騎手','騎手名','jockey'),
+   status:pick(row,'備考','状態','status'),
    odds:num(pick(row,'単勝オッズ','オッズ','odds'))
-  })).filter(h=>h.horse&&h.date&&h.venue&&h.raceNo);
-  if(!entrants.length)throw new Error('出走表に日付・競馬場・レース番号・馬名が必要です。');
+  })).filter(h=>h.horse&&h.date&&h.venue&&h.raceNo&&!/競走除外|出走取消|取消/.test(h.status));
+  if(!entrants.length)throw new Error('有効な出走馬がありません。日付・競馬場・レース番号・馬名と、取消状態を確認してください。');
   const scored=entrants.map(h=>Object.assign(h,UMAIValueModel.scoreHorse(h,history,h.date)));
   const groups=new Map();
   scored.forEach(h=>{const key=[h.date,h.venue,h.raceNo].join('|');if(!groups.has(key))groups.set(key,[]);groups.get(key).push(h);});
@@ -165,7 +191,7 @@ document.getElementById('runValueAi').addEventListener('click',async()=>{
    const av=a.horses.filter(h=>h.valueCandidate).length,bv=b.horses.filter(h=>h.valueCandidate).length;
    return bv-av||(Math.max(...b.horses.map(h=>h.score??-1))-Math.max(...a.horses.map(h=>h.score??-1)));
   });
-  const summary='過去成績：'+history.rows.length.toLocaleString('ja-JP')+'頭分 / '+history.raceCount.toLocaleString('ja-JP')+'レース\n出走表：'+entrants.length+'頭 / '+groups.size+'レース\n勝率校正：'+(calibration.ready?'完了（'+calibration.sampleCount+'サンプル）':'未完了（'+calibration.sampleCount+'サンプル・200必要）');
+  const summary='過去成績：'+history.rows.length.toLocaleString('ja-JP')+'頭分 / '+history.raceCount.toLocaleString('ja-JP')+'レース（重複除外済み）\n出走表：'+entrants.length+'頭 / '+groups.size+'レース\n勝率校正：'+(calibration.ready?'完了（'+calibration.sampleCount+'サンプル）':'未完了（'+calibration.sampleCount+'サンプル・200必要）');
   const details=results.map((r,i)=>{
    const candidates=r.horses.filter(h=>h.valueCandidate);
    const sorted=[...r.horses].sort((a,b)=>(b.score??-1)-(a.score??-1));
