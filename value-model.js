@@ -65,18 +65,32 @@
       horseNo: number(get("馬番", "horse_no")),
       horse: text(get("馬名", "horse")),
       sexAge: text(get("性齢", "性別年齢", "sex_age")),
-      jockey: text(get("騎手", "騎手名", "jockey"))
+      jockey: text(get("騎手", "騎手名", "jockey")),
+      status: text(get("備考", "状態", "status"))
     };
   }
+
+  const isNonRunner = (row) =>
+    /競走除外|出走取消|取消/.test(text(row && (row.status || row["備考"] || row.note)));
 
   function raceKey(r) {
     return [r.date, r.venue, r.raceNo].join("|");
   }
 
   function prepareHistory(rawRows) {
-    const rows = (rawRows || []).map(normalizeResult).filter(r =>
+    // 複数CSV・all_results.csv・個別CSVの重複をレース内の馬番で除外する。
+    const unique = new Map();
+    (rawRows || []).map(normalizeResult).filter(r =>
       r.date && r.venue && r.raceNo != null && r.horse
-    );
+    ).forEach(r => {
+      const key = [raceKey(r), r.horseNo != null ? r.horseNo : r.horse].join("|");
+      const old = unique.get(key);
+      if (!old) unique.set(key, r);
+      else unique.set(key, Object.assign({}, old, Object.fromEntries(
+        Object.entries(r).filter(([k, v]) => v !== "" && v != null)
+      )));
+    });
+    const rows = Array.from(unique.values());
     const races = new Map();
     rows.forEach(r => {
       const key = raceKey(r);
@@ -84,10 +98,11 @@
       races.get(key).push(r);
     });
     for (const group of races.values()) {
-      const fieldSize = group.length;
+      const starters = group.filter(r => !isNonRunner(r));
+      const fieldSize = starters.length;
       group.forEach(r => {
         r.fieldSize = fieldSize;
-        r.performance = fieldSize > 1 && r.finish != null
+        r.performance = !isNonRunner(r) && fieldSize > 1 && r.finish != null
           ? ((fieldSize - r.finish + 0.5) / fieldSize) * 100
           : null;
       });
@@ -95,6 +110,7 @@
     const byHorse = new Map();
     const byJockey = new Map();
     rows.forEach(r => {
+      if (isNonRunner(r)) return;
       if (!byHorse.has(r.horse)) byHorse.set(r.horse, []);
       byHorse.get(r.horse).push(r);
       if (r.jockey) {
@@ -229,14 +245,25 @@
   function evaluateRaceValue(scoredEntrants, calibration, options) {
     const opts = Object.assign({ minScore: 60, minCoverage: 60, minStarts: 3, minOdds: 5, minEdge: 0.10 }, options || {});
     const rows = (scoredEntrants || []).map(h => {
-      const odds = number(h.odds || h["単勝オッズ"]);
+      const odds = number(h.odds != null ? h.odds : h["単勝オッズ"]);
       return Object.assign({}, h, { odds });
     });
-    const oddsComplete = rows.length >= 2 && rows.every(h => h.odds != null && h.odds > 1);
-    const inverseSum = rows.reduce((sum, h) => sum + (h.odds && h.odds > 1 ? 1 / h.odds : 0), 0);
+    const starters = rows.filter(h => !isNonRunner(h));
+    // 競走除外・取消馬は全頭オッズの充足判定から除外する。
+    const oddsComplete = starters.length >= 2 && starters.every(h => h.odds != null && h.odds > 1);
+    const inverseSum = starters.reduce((sum, h) => sum + (h.odds && h.odds > 1 ? 1 / h.odds : 0), 0);
     return rows.map(h => {
+      if (isNonRunner(h)) {
+        return Object.assign({}, h, {
+          valueAvailable: false, valueCandidate: false,
+          valueReason: "競走除外・取消のため予想対象外です。"
+        });
+      }
       if (!calibration || !calibration.ready || !oddsComplete || h.score == null || !h.odds || h.odds <= 1 || !inverseSum) {
-        return Object.assign({}, h, { valueAvailable: false, valueCandidate: false, valueReason: !oddsComplete ? "全出走馬のオッズが揃っていません。" : "校正済み確率または必要データが不足しています。" });
+        return Object.assign({}, h, {
+          valueAvailable: false, valueCandidate: false,
+          valueReason: !oddsComplete ? "出走馬のオッズが揃っていません。" : "校正済み確率または必要データが不足しています。"
+        });
       }
       const bin = calibration.bins[Math.min(19, Math.floor(h.score / 5))];
       const marketProbability = (1 / h.odds) / inverseSum;
@@ -258,7 +285,6 @@
       ((b.score || -1) - (a.score || -1))
     );
   }
-
   root.UMAIValueModel = {
     version: "1.0.0",
     weights: WEIGHTS,
