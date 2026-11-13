@@ -128,19 +128,22 @@ document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>{mo
 const yen=n=>'¥'+Number(n).toLocaleString('ja-JP');
 document.getElementById('checkCloudApi').addEventListener('click',async()=>{
  const status=document.getElementById('cloudApiStatus');
+ const sameOriginApi=location.hostname==='uma-ai.w89pgwrjms.workers.dev';
+ const endpoint=sameOriginApi?'/api/health':'https://uma-ai-api.w89pgwrjms.workers.dev/health';
+ const expectedWorker=sameOriginApi?'uma-ai':'uma-ai-api';
  status.textContent='Cloudflare APIへ接続しています…';
  try{
-  const response=await fetch('https://uma-ai-api.w89pgwrjms.workers.dev/health',{
+  const response=await fetch(endpoint,{
    method:'GET',
-   credentials:'include',
+   credentials:sameOriginApi?'same-origin':'include',
    cache:'no-store'
   });
   if(!response.ok)throw new Error('HTTP '+response.status);
   const data=await response.json();
-  if(data.status!=='ok'||data.worker!=='uma-ai-api')throw new Error('予期しない応答');
+  if(data.status!=='ok'||data.worker!==expectedWorker)throw new Error('予期しない応答');
   status.textContent='接続成功：非公開データサーバーと通信できました。';
  }catch(error){
-  status.textContent='接続できませんでした。Cloudflare Accessのログイン状態・Cookie設定を確認してください。詳細：'+error.message;
+  status.textContent='接続できませんでした。Cloudflare Accessのログイン状態を確認してください。詳細：'+error.message;
  }
 });
 const parseCsvLine=line=>{const a=[];let v='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'&&line[i+1]==='"'&&q){v+='"';i++;}else if(ch==='"'){q=!q;}else if(ch===','&&!q){a.push(v.trim());v='';}else v+=ch;}a.push(v.trim());return a;};
