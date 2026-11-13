@@ -200,10 +200,142 @@
     };
   }
 
+
+  // Merge cloud-restored rows into IndexedDB without deleting local records.
+  async function mergeRowsIntoStore(rows) {
+    const incoming = new Map();
+    (rows || []).forEach(row => {
+      const id = row && (row.id || recordId(row));
+      if (!id) return;
+      incoming.set(id, mergeRows(incoming.get(id), Object.assign({}, row, { id })));
+    });
+    if (!incoming.size) throw new Error("クラウドに有効な履歴データがありません。");
+
+    const existing = await getRows();
+    const existingMap = new Map(existing.map(row => [row.id || recordId(row), row]));
+    let added = 0;
+    const toSave = [];
+    incoming.forEach((row, id) => {
+      const previous = existingMap.get(id);
+      if (!previous) added++;
+      const merged = mergeRows(previous, row);
+      merged.id = id;
+      toSave.push(merged);
+    });
+
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, "readwrite");
+      const store = tx.objectStore(STORE);
+      toSave.forEach(row => store.put(row));
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error || new Error("履歴の保存に失敗しました。"));
+      tx.onabort = () => reject(tx.error || new Error("履歴の保存が中断されました。"));
+    }).finally(() => db.close());
+
+    const stats = await getStats();
+    return { added, totalRows: stats.rowCount, raceCount: stats.raceCount };
+  }
+
+  function cloudApiUrl(key) {
+    return "/api/data?key=" + encodeURIComponent(key);
+  }
+
+  async function cloudRequest(url, options) {
+    const response = await fetch(url, Object.assign({
+      credentials: "same-origin",
+      cache: "no-store"
+    }, options || {}));
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error("Cloudflare API HTTP " + response.status + (detail ? "：" + detail.slice(0, 180) : ""));
+    }
+    return response;
+  }
+
+  async function backupToCloud() {
+    const rows = await getRows();
+    if (!rows.length) throw new Error("バックアップする過去成績がありません。");
+    const prefix = "data/history-v1/";
+    const chunkLimit = 3 * 1024 * 1024;
+    const chunks = [];
+    let batch = [], batchBytes = 2;
+
+    for (const row of rows) {
+      const serialized = JSON.stringify(row);
+      const bytes = new TextEncoder().encode(serialized).length + (batch.length ? 1 : 0);
+      if (batch.length && batchBytes + bytes > chunkLimit) {
+        chunks.push(batch);
+        batch = [];
+        batchBytes = 2;
+      }
+      batch.push(row);
+      batchBytes += bytes;
+    }
+    if (batch.length) chunks.push(batch);
+
+    const chunkKeys = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const key = prefix + "chunk-" + String(i + 1).padStart(4, "0") + ".json";
+      const body = JSON.stringify(chunks[i]);
+      await cloudRequest(cloudApiUrl(key), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body
+      });
+      chunkKeys.push(key);
+    }
+
+    const manifest = {
+      format: "uma-ai-history",
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      rowCount: rows.length,
+      chunks: chunkKeys
+    };
+    await cloudRequest(cloudApiUrl(prefix + "manifest.json"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(manifest)
+    });
+    return { rowCount: rows.length, chunkCount: chunks.length, updatedAt: manifest.updatedAt };
+  }
+
+  async function restoreFromCloud() {
+    const prefix = "data/history-v1/";
+    const manifestResponse = await cloudRequest(cloudApiUrl(prefix + "manifest.json"));
+    const manifest = await manifestResponse.json();
+    if (!manifest || manifest.format !== "uma-ai-history" || manifest.version !== 1 ||
+        !Array.isArray(manifest.chunks) || manifest.chunks.length < 1 ||
+        manifest.chunks.length > 1000) {
+      throw new Error("クラウドのバックアップ情報が正しくありません。");
+    }
+
+    const restored = [];
+    for (const key of manifest.chunks) {
+      if (typeof key !== "string" || !key.startsWith(prefix) ||
+          !/^data\/history-v1\/chunk-\d{4}\.json$/.test(key)) {
+        throw new Error("バックアップ内のファイル指定が正しくありません。");
+      }
+      const response = await cloudRequest(cloudApiUrl(key));
+      const rows = await response.json();
+      if (!Array.isArray(rows)) throw new Error("履歴ファイルの形式が正しくありません。");
+      restored.push(...rows);
+    }
+    const result = await mergeRowsIntoStore(restored);
+    return Object.assign({
+      cloudRows: restored.length,
+      chunkCount: manifest.chunks.length,
+      updatedAt: manifest.updatedAt
+    }, result);
+  }
+
   root.UMAIHistoryStore = {
     parseCSV,
     importFiles,
     getRows,
-    getStats
+    getStats,
+    backupToCloud,
+    restoreFromCloud
   };
 })(typeof window !== "undefined" ? window : globalThis);
