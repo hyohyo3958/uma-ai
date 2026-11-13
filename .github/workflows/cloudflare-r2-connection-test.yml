@@ -27,29 +27,47 @@ jobs:
             --header "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET"
           )
 
-          list_response="$(curl --fail-with-body --silent --show-error "${headers[@]}" \
-            "https://uma-ai-api.w89pgwrjms.workers.dev/r2-check")"
+          base="https://uma-ai-api.w89pgwrjms.workers.dev"
 
-          echo "R2 list check:"
+          health="$(curl --fail-with-body --silent --show-error "${headers[@]}" "$base/health")"
+          echo "Worker health check:"
+          echo "$health" | jq .
+          echo "$health" | jq -e '.status == "ok" and .worker == "uma-ai-api"' > /dev/null
+
+          payload='{"test":"success","message":"UMA AI production API test"}'
+
+          write_response="$(curl --fail-with-body --silent --show-error \
+            "${headers[@]}" \
+            --header "Content-Type: application/json" \
+            --request POST \
+            --data-binary "$payload" \
+            "$base/data?key=data/connection-test.json")"
+
+          echo "R2 POST write check:"
+          echo "$write_response" | jq .
+          echo "$write_response" | jq -e '
+            .status == "ok"
+            and .saved == true
+            and .key == "data/connection-test.json"
+          ' > /dev/null
+
+          read_response="$(curl --fail-with-body --silent --show-error "${headers[@]}" \
+            "$base/data?key=data/connection-test.json")"
+
+          echo "R2 GET read check:"
+          echo "$read_response" | jq .
+          echo "$read_response" | jq -e '
+            .test == "success"
+            and .message == "UMA AI production API test"
+          ' > /dev/null
+
+          list_response="$(curl --fail-with-body --silent --show-error "${headers[@]}" "$base/files")"
+
+          echo "R2 file list check:"
           echo "$list_response" | jq .
-
           echo "$list_response" | jq -e '
             .status == "ok"
-            and .r2 == "connected"
-            and (.files | index("_system/connection-test.json") != null)
+            and (.files | map(.key) | index("data/connection-test.json") != null)
           ' > /dev/null
 
-          rw_response="$(curl --fail-with-body --silent --show-error "${headers[@]}" \
-            "https://uma-ai-api.w89pgwrjms.workers.dev/r2-test")"
-
-          echo "R2 write/read check:"
-          echo "$rw_response" | jq .
-
-          echo "$rw_response" | jq -e '
-            .status == "ok"
-            and .write == "success"
-            and .read == "success"
-            and .savedData.test == "success"
-          ' > /dev/null
-
-          echo "Cloudflare Access, Worker, and private R2 list/write/read: OK"
+          echo "Cloudflare Access, Worker, and production R2 GET/POST/list: OK"
