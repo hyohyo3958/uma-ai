@@ -285,6 +285,90 @@
       ((b.score || -1) - (a.score || -1))
     );
   }
+
+  // Chronological holdout backtest: train calibration only on earlier race dates.
+  function runChronologicalBacktest(history, options) {
+    const opts = Object.assign({ trainFraction: 0.6, minStarts: 3, minSamples: 200 }, options || {});
+    const validRows = (history.rows || []).filter(r => r.date && r.finish != null && !isNonRunner(r));
+    const dates = Array.from(new Set(validRows.map(r => r.date))).sort();
+    if (dates.length < 10) {
+      return { ready: false, reason: "時系列検証には少なくとも10開催日分のデータが必要です。", dateCount: dates.length };
+    }
+    const splitIndex = Math.max(1, Math.min(dates.length - 1, Math.floor(dates.length * opts.trainFraction)));
+    const trainEnd = dates[splitIndex - 1];
+    const testStart = dates[splitIndex];
+    const trainRows = validRows.filter(r => r.date <= trainEnd);
+    const testRows = validRows.filter(r => r.date >= testStart);
+    const samples = [];
+    trainRows.forEach(row => {
+      const pastScore = scoreHorse({
+        horse: row.horse, venue: row.venue, surface: row.surface,
+        distance: row.distance, going: row.going, jockey: row.jockey
+      }, history, row.date);
+      if (pastScore.score != null && pastScore.starts >= opts.minStarts) {
+        samples.push({ score: pastScore.score, finish: row.finish });
+      }
+    });
+    const calibration = calibrateWinProbability(samples, opts.minSamples);
+    if (!calibration.ready) {
+      return {
+        ready: false, reason: calibration.reason, sampleCount: calibration.sampleCount,
+        trainStart: dates[0], trainEnd, testStart, testEnd: dates[dates.length - 1],
+        trainRaces: new Set(trainRows.map(raceKey)).size,
+        testRaces: new Set(testRows.map(raceKey)).size
+      };
+    }
+
+    const races = new Map();
+    testRows.forEach(row => {
+      const key = raceKey(row);
+      if (!races.has(key)) races.set(key, []);
+      races.get(key).push(row);
+    });
+    let evaluatedRaces = 0, top1Hits = 0, top3Hits = 0;
+    let scoredHorses = 0, skippedHorses = 0, brierSum = 0, brierN = 0;
+    let randomChanceSum = 0;
+    for (const group of races.values()) {
+      const scored = group.map(row => {
+        const result = scoreHorse({
+          horse: row.horse, venue: row.venue, surface: row.surface,
+          distance: row.distance, going: row.going, jockey: row.jockey
+        }, history, row.date);
+        return Object.assign({}, row, result);
+      });
+      const usable = scored.filter(h => h.score != null && h.starts >= opts.minStarts);
+      skippedHorses += scored.length - usable.length;
+      scoredHorses += usable.length;
+      if (usable.length < 2) continue;
+      evaluatedRaces++;
+      randomChanceSum += 1 / usable.length;
+      const ranked = usable.slice().sort((a, b) => b.score - a.score);
+      const topScore = ranked[0].score;
+      const topGroup = ranked.filter(h => h.score === topScore);
+      if (topGroup.some(h => h.finish === 1)) top1Hits++;
+      const thirdScore = ranked[Math.min(2, ranked.length - 1)].score;
+      if (ranked.filter(h => h.score >= thirdScore).some(h => h.finish === 1)) top3Hits++;
+      usable.forEach(h => {
+        const bin = calibration.bins[Math.min(19, Math.floor(h.score / 5))];
+        const actual = h.finish === 1 ? 1 : 0;
+        brierSum += Math.pow(bin.probability - actual, 2);
+        brierN++;
+      });
+    }
+    if (!evaluatedRaces) {
+      return { ready: false, reason: "検証期間に採点可能なレースがありません。", sampleCount: calibration.sampleCount, trainEnd, testStart };
+    }
+    return {
+      ready: true, method: "chronological-holdout", trainStart: dates[0], trainEnd,
+      testStart, testEnd: dates[dates.length - 1], trainRaces: new Set(trainRows.map(raceKey)).size,
+      testRaces: races.size, evaluatedRaces, scoredHorses, skippedHorses,
+      calibrationSamples: calibration.sampleCount, top1Hits, top3Hits,
+      top1Rate: top1Hits / evaluatedRaces, top3Rate: top3Hits / evaluatedRaces,
+      randomTop1Baseline: randomChanceSum / evaluatedRaces,
+      brierScore: brierN ? brierSum / brierN : null
+    };
+  }
+
   root.UMAIValueModel = {
     version: "1.0.0",
     weights: WEIGHTS,
@@ -293,6 +377,7 @@
     scoreHorse,
     calibrateWinProbability,
     buildWalkForwardCalibration,
+    runChronologicalBacktest,
     evaluateRaceValue
   };
 })(typeof window !== "undefined" ? window : globalThis);

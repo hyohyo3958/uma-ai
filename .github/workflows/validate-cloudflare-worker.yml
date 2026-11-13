@@ -8,6 +8,7 @@ on:
       - "src/**"
       - "index.html"
       - "history-store.js"
+      - "value-model.js"
       - ".assetsignore"
       - ".github/workflows/validate-cloudflare-worker.yml"
   workflow_dispatch:
@@ -32,6 +33,9 @@ jobs:
 
       - name: Check browser history store JavaScript syntax
         run: node --check history-store.js
+
+      - name: Check Value AI model JavaScript syntax
+        run: node --check value-model.js
 
       - name: Validate Wrangler config and dry-run asset build
         run: npx --yes wrangler@4 deploy --dry-run --outdir=.wrangler-dry-run
