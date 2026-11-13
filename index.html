@@ -41,6 +41,12 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <p class="stat" style="margin-top:10px">データ未取得の項目は推測で補いません。出走表・オッズの自動取得はデータ提供元の利用条件を確認後に追加します。</p>
 <a href="https://www.jra.go.jp/keiba/calendar/" target="_blank" rel="noopener" style="color:var(--gold)">JRA公式開催日程を見る</a>
 </div>
+<div class="card" id="cloudApiCard">
+<h2>非公開データサーバー接続</h2>
+<p class="stat">Cloudflare Accessでログインした状態で、個人用データサーバーへの接続を確認します。</p>
+<button id="checkCloudApi" style="width:100%">Cloudflare APIに接続</button>
+<p class="stat" id="cloudApiStatus" role="status" style="margin-top:10px">未確認</p>
+</div>
 <div class="card">
 <h2>レース設定</h2>
 <label for="race">開催・レース</label>
@@ -120,6 +126,23 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 let mode='大穴型',spent=0,returned=0,records=0,lastRankRows=[];
 document.querySelectorAll('.mode').forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.mode;document.querySelectorAll('.mode').forEach(x=>x.classList.toggle('active',x===b));}));
 const yen=n=>'¥'+Number(n).toLocaleString('ja-JP');
+document.getElementById('checkCloudApi').addEventListener('click',async()=>{
+ const status=document.getElementById('cloudApiStatus');
+ status.textContent='Cloudflare APIへ接続しています…';
+ try{
+  const response=await fetch('https://uma-ai-api.w89pgwrjms.workers.dev/health',{
+   method:'GET',
+   credentials:'include',
+   cache:'no-store'
+  });
+  if(!response.ok)throw new Error('HTTP '+response.status);
+  const data=await response.json();
+  if(data.status!=='ok'||data.worker!=='uma-ai-api')throw new Error('予期しない応答');
+  status.textContent='接続成功：非公開データサーバーと通信できました。';
+ }catch(error){
+  status.textContent='接続できませんでした。Cloudflare Accessのログイン状態・Cookie設定を確認してください。詳細：'+error.message;
+ }
+});
 const parseCsvLine=line=>{const a=[];let v='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"'&&line[i+1]==='"'&&q){v+='"';i++;}else if(ch==='"'){q=!q;}else if(ch===','&&!q){a.push(v.trim());v='';}else v+=ch;}a.push(v.trim());return a;};
 const downloadCsv=(name,rows)=>{const csv=rows.map(row=>row.map(v=>{const t=String(v??'');return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;}).join(',')).join('\n');const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);};
 
