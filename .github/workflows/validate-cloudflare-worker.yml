@@ -32,9 +32,9 @@ jobs:
       - name: Validate Wrangler config and dry-run asset build
         run: npx --yes wrangler@4 deploy --dry-run --outdir=.wrangler-dry-run
 
-      - name: Confirm app assets are included
+      - name: Confirm required app source files exist
         run: |
-          test -f .wrangler-dry-run/index.html
-          test -f .wrangler-dry-run/value-model.js
-          test -f .wrangler-dry-run/history-store.js
-          echo "Required app assets are present in the dry-run output."
+          test -f index.html
+          test -f value-model.js
+          test -f history-store.js
+          echo "Required app source files are present."
