@@ -1,0 +1,10 @@
+.git
+.github
+.gitignore
+.assetsignore
+wrangler.jsonc
+src
+docs
+scripts
+README*
+DATA_SOURCES.md
