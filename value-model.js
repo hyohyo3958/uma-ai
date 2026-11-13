@@ -327,7 +327,7 @@
     });
     let evaluatedRaces = 0, top1Hits = 0, top3Hits = 0;
     let scoredHorses = 0, skippedHorses = 0, brierSum = 0, brierN = 0;
-    let randomChanceSum = 0;
+    let randomChanceSum = 0, randomTop3ChanceSum = 0;
     for (const group of races.values()) {
       const scored = group.map(row => {
         const result = scoreHorse({
@@ -342,6 +342,7 @@
       if (usable.length < 2) continue;
       evaluatedRaces++;
       randomChanceSum += 1 / usable.length;
+      randomTop3ChanceSum += Math.min(3, usable.length) / usable.length;
       const ranked = usable.slice().sort((a, b) => b.score - a.score);
       const topScore = ranked[0].score;
       const topGroup = ranked.filter(h => h.score === topScore);
@@ -365,6 +366,7 @@
       calibrationSamples: calibration.sampleCount, top1Hits, top3Hits,
       top1Rate: top1Hits / evaluatedRaces, top3Rate: top3Hits / evaluatedRaces,
       randomTop1Baseline: randomChanceSum / evaluatedRaces,
+      randomTop3Baseline: randomTop3ChanceSum / evaluatedRaces,
       brierScore: brierN ? brierSum / brierN : null
     };
   }
