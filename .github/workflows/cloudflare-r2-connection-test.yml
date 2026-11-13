@@ -22,17 +22,34 @@ jobs:
             exit 1
           fi
 
-          response="$(curl --fail-with-body --silent --show-error \
-            --header "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
-            --header "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+          headers=(
+            --header "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID"
+            --header "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET"
+          )
+
+          list_response="$(curl --fail-with-body --silent --show-error "${headers[@]}" \
             "https://uma-ai-api.w89pgwrjms.workers.dev/r2-check")"
 
-          echo "$response" | jq .
+          echo "R2 list check:"
+          echo "$list_response" | jq .
 
-          echo "$response" | jq -e '
+          echo "$list_response" | jq -e '
             .status == "ok"
             and .r2 == "connected"
             and (.files | index("_system/connection-test.json") != null)
           ' > /dev/null
 
-          echo "Cloudflare Worker and private R2 bucket connection: OK"
+          rw_response="$(curl --fail-with-body --silent --show-error "${headers[@]}" \
+            "https://uma-ai-api.w89pgwrjms.workers.dev/r2-test")"
+
+          echo "R2 write/read check:"
+          echo "$rw_response" | jq .
+
+          echo "$rw_response" | jq -e '
+            .status == "ok"
+            and .write == "success"
+            and .read == "success"
+            and .savedData.test == "success"
+          ' > /dev/null
+
+          echo "Cloudflare Access, Worker, and private R2 list/write/read: OK"
