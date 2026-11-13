@@ -297,7 +297,8 @@ document.getElementById('runHistoricalBacktest').addEventListener('click',async(
    '検証レース数：'+result.evaluatedRaces.toLocaleString('ja-JP')+'\\n'+
    '最高スコア馬の勝率：'+pct(result.top1Rate)+'（'+result.top1Hits+'/'+result.evaluatedRaces+'レース）\\n'+
    '上位3頭以内に勝ち馬：'+pct(result.top3Rate)+'（'+result.top3Hits+'/'+result.evaluatedRaces+'レース）\\n'+
-   'ランダム選択の理論勝率目安：'+pct(result.randomTop1Baseline)+'\\n'+
+   '最高スコア馬のランダム勝率目安：'+pct(result.randomTop1Baseline)+'\\n'+
+   '上位3頭のランダム的中目安：'+pct(result.randomTop3Baseline)+'\\n'+
    '確率校正のBrier score：'+result.brierScore.toFixed(4)+'（低いほど良い）\\n\\n'+
    '注意：この過去成績CSVに単勝オッズ・払戻の十分な履歴が含まれているか未確認のため、回収率はまだ算出しません。これはスコア順位の検証であり、実際の投資成績を保証するものではありません。';
  }catch(error){out.textContent='検証に失敗しました：'+error.message;}
