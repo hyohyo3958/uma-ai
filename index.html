@@ -86,6 +86,9 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <label for="historyFolder">またはPDF変換ツールのoutputフォルダを選択</label><input id="historyFolder" type="file" accept=".csv,text/csv" webkitdirectory multiple>
 <p class="stat">all_results.csvだけでも取り込めます。個別CSVと重なっても自動で重複を除外します。</p>
 <button id="importHistoryFiles" style="width:100%;margin-top:8px">選択した履歴CSVを追加・保存</button>
+<button id="backupHistoryCloud" style="width:100%;margin-top:8px">過去成績を非公開クラウドへバックアップ</button>
+<button id="restoreHistoryCloud" style="width:100%;margin-top:8px">クラウドの過去成績をこの端末に追加</button>
+<p class="stat" id="cloudHistoryStatus" role="status" style="margin-top:8px">クラウドバックアップ：未実行</p>
 <p class="stat" id="historyStoreStatus" style="margin-top:8px">保存済みの過去成績を確認しています…</p>
 <label for="entryCsv">今回の出走表CSV（単勝オッズを含む）</label><input id="entryCsv" type="file" accept=".csv,text/csv">
 <button class="primary" id="runValueAi">Value AIで分析する</button>
@@ -177,6 +180,35 @@ document.getElementById('importHistoryFiles').addEventListener('click',async()=>
  }catch(e){historyStoreStatus.textContent='取り込み失敗：'+e.message;}
 });
 refreshHistoryStoreStatus();
+
+const cloudHistoryStatus=document.getElementById('cloudHistoryStatus');
+const cloudHistoryButtons=['backupHistoryCloud','restoreHistoryCloud'];
+function cloudHistoryAvailable(){
+ return location.hostname==='uma-ai.w89pgwrjms.workers.dev';
+}
+cloudHistoryButtons.forEach(id=>{
+ document.getElementById(id).addEventListener('click',async()=>{
+  if(!cloudHistoryAvailable()){
+   cloudHistoryStatus.textContent='この機能はCloudflare版アプリ（uma-ai.w89pgwrjms.workers.dev）で利用できます。';
+   return;
+  }
+  const backup=id==='backupHistoryCloud';
+  const button=document.getElementById(id);
+  button.disabled=true;
+  cloudHistoryStatus.textContent=backup?'過去成績を分割して非公開クラウドへ保存しています…':'クラウドのバックアップを読み込んでいます…';
+  try{
+   const result=backup?await UMAIHistoryStore.backupToCloud():await UMAIHistoryStore.restoreFromCloud();
+   await refreshHistoryStoreStatus();
+   cloudHistoryStatus.textContent=backup
+    ?'バックアップ成功：'+result.rowCount.toLocaleString('ja-JP')+'頭分を'+result.chunkCount+'ファイルに分けて保存しました。'
+    :'復元成功：クラウド'+result.cloudRows.toLocaleString('ja-JP')+'頭分を確認。新規'+result.added.toLocaleString('ja-JP')+'頭を追加し、端末内の履歴と統合しました。';
+  }catch(error){
+   cloudHistoryStatus.textContent='処理できませんでした：'+error.message;
+  }finally{
+   button.disabled=false;
+  }
+ });
+});
 
 document.getElementById('runValueAi').addEventListener('click',async()=>{
  const out=document.getElementById('valueAiResult');
