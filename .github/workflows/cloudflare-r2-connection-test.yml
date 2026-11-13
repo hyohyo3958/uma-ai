@@ -1,0 +1,38 @@
+name: Cloudflare R2 connection test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-r2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Cloudflare Worker and private R2 bucket
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$CF_ACCESS_CLIENT_ID" ] || [ -z "$CF_ACCESS_CLIENT_SECRET" ]; then
+            echo "Required GitHub Actions secrets are missing."
+            exit 1
+          fi
+
+          response="$(curl --fail-with-body --silent --show-error \
+            --header "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" \
+            --header "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" \
+            "https://uma-ai-api.w89pgwrjms.workers.dev/r2-check")"
+
+          echo "$response" | jq .
+
+          echo "$response" | jq -e '
+            .status == "ok"
+            and .r2 == "connected"
+            and (.files | index("_system/connection-test.json") != null)
+          ' > /dev/null
+
+          echo "Cloudflare Worker and private R2 bucket connection: OK"
