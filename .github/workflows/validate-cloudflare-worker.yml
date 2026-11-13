@@ -7,6 +7,7 @@ on:
       - "wrangler.jsonc"
       - "src/**"
       - "index.html"
+      - "history-store.js"
       - ".assetsignore"
       - ".github/workflows/validate-cloudflare-worker.yml"
   workflow_dispatch:
@@ -28,6 +29,9 @@ jobs:
 
       - name: Check Worker JavaScript syntax
         run: node --check src/index.js
+
+      - name: Check browser history store JavaScript syntax
+        run: node --check history-store.js
 
       - name: Validate Wrangler config and dry-run asset build
         run: npx --yes wrangler@4 deploy --dry-run --outdir=.wrangler-dry-run
