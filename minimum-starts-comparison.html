@@ -43,6 +43,11 @@ table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}th,td{p
 <p class="note">年齢別欄は、各条件で予想対象に入った馬の頭数と、その中で実際に勝った頭数の集計です。年齢別の順位精度そのものではないため、全体比較と分けて判断してください。</p>
 </div>
 <div class="card">
+<h2>過去1走だけの馬の成績</h2>
+<div id="oneStart" class="result">まだ実行していません。</div>
+<p class="note">「過去1走だけ」は、対象レースより前の出走履歴がちょうど1件ある馬です。各レース内でその馬たちだけをスコア順に並べ、2頭以上いるレースで順位精度を集計します。年齢別も同じ方法です。採点式・本番条件・保存データは変更しません。</p>
+</div>
+<div class="card">
 <h2>確認事項</h2>
 <div id="notes" class="result">このページは読み取り専用です。採点式・配点・最低3走の本番条件・保存データ・クラウドバックアップは変更しません。</div>
 </div>
@@ -104,6 +109,40 @@ $('run').addEventListener('click',async()=>{
    }
   }
   $('ages').textContent=ageLines.join('\n');
+  // Exactly-one-prior-start cohort; rank only against other one-start horses in the same race.
+  const oneStartRows=validRows.map(row=>{
+   const scored=UMAIValueModel.scoreHorse({horse:row.horse,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,jockey:row.jockey},history,row.date);
+   return {year:row.date.slice(0,4),race:[row.date,row.venue,row.raceNo].join('|'),age:ageOf(row),score:scored.score,starts:scored.starts,finish:row.finish};
+  }).filter(r=>r.starts===1&&r.score!=null);
+  const summarize=items=>{
+   const byRace=new Map();
+   items.forEach(r=>{if(!byRace.has(r.race))byRace.set(r.race,[]);byRace.get(r.race).push(r);});
+   let racesN=0,top1=0,top3=0,random1=0,random3=0,wins=0;
+   byRace.forEach(group=>{
+    wins+=group.filter(r=>r.finish===1).length;
+    if(group.length<2)return;
+    racesN++;
+    random1+=1/group.length;random3+=Math.min(3,group.length)/group.length;
+    const ranked=group.slice().sort((a,b)=>b.score-a.score);
+    const first=ranked[0].score,third=ranked[Math.min(2,ranked.length-1)].score;
+    if(ranked.some(r=>r.score===first&&r.finish===1))top1++;
+    if(ranked.some(r=>r.score>=third&&r.finish===1))top3++;
+   });
+   return {horses:items.length,wins,racesN,top1,top3,top1Rate:racesN?top1/racesN:null,top3Rate:racesN?top3/racesN:null,random1:racesN?random1/racesN:null,random3:racesN?random3/racesN:null};
+  };
+  const showSummary=(label,items)=>{
+   const r=summarize(items);
+   return label+'：対象 '+fmt(r.horses)+'頭／勝ち '+fmt(r.wins)+'頭\n'+
+    '  2頭以上いる評価レース '+fmt(r.racesN)+'／最高スコア馬の勝率 '+pct(r.top1Rate)+'（'+fmt(r.top1)+'レース）\n'+
+    '  上位3頭以内の勝ち馬率 '+pct(r.top3Rate)+'（'+fmt(r.top3)+'レース）\n'+
+    '  ランダム基準：最高1頭 '+pct(r.random1)+'／上位3頭 '+pct(r.random3);
+  };
+  const oneLines=[showSummary('全期間',oneStartRows)];
+  for(const year of ['2024','2025']) oneLines.push(showSummary(year+'年',oneStartRows.filter(r=>r.year===year)));
+  oneLines.push('年齢別（全期間）');
+  for(const age of ['2歳','3歳','4歳以上','年齢不明']) oneLines.push(showSummary(age,oneStartRows.filter(r=>r.age===age)));
+  $('oneStart').textContent=oneLines.join('\n\n');
+
   const years=Array.from(new Set(history.rows.filter(r=>r.date).map(r=>r.date.slice(0,4)))).sort();
   $('notes').textContent='読み込んだデータ：'+(years.length?years[0]+'年〜'+years[years.length-1]+'年':'期間不明')+'（'+fmt(history.rows.length)+'行）\n'+
    '検証期間・採点式・配点・対象レースは3条件で共通です。各条件の勝率校正は、それぞれの学習期間だけで実施しました。\n'+
