@@ -179,8 +179,8 @@ function periodDriftReport(allSamples,targetRows){
  const bands=[{label:'60〜69',min:60,max:70},{label:'70〜79',min:70,max:80},{label:'80〜89',min:80,max:90},{label:'90〜100',min:90,max:101}];
  const bandLines=bands.map(b=>{
   const rowSet=rows=>rows.filter(r=>r.score>=b.min&&r.score<b.max);
-  const summarizeSet=(name,rows)=>{
-   const x=rowSet(rows);if(!x.length)return name+' —';
+  const summarizeSet=(name,items)=>{
+   const x=rowSet(items);if(!x.length)return name+' —';
    const actual=x.reduce((a,r)=>a+r.hit,0)/x.length;
    const estimated=x.reduce((a,r)=>a+r.probability,0)/x.length;
    return name+' '+fmt(x.length)+'頭・推定 '+pct(estimated)+'・実際 '+pct(actual)+'・差 '+((actual-estimated)*100).toFixed(1)+'pt';
