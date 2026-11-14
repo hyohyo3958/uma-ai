@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101827">
+<title>UMA AI｜タブ画面プレビュー</title>
+<style>
+:root{color-scheme:dark;--bg:#101827;--panel:#1b2638;--panel2:#202e43;--line:#344258;--muted:#a9b5c7;--gold:#e4b65e;--green:#65c99a;--red:#f08d8d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f5f7fb;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
+.app{max-width:760px;margin:auto;min-height:100vh;padding:22px 16px 105px}
+header{display:flex;justify-content:space-between;align-items:center;margin:4px 0 22px}h1{font-size:26px;letter-spacing:.04em;margin:0}header small,.muted,.hint{color:var(--muted)}.pill{border:1px solid var(--line);border-radius:99px;padding:6px 10px;font-size:12px;color:var(--green)}
+h2{font-size:17px;margin:0 0 12px}h3{font-size:14px;margin:0 0 8px}.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{background:var(--panel2);padding:13px;border-radius:12px}.metric b{display:block;font-size:22px;margin-top:5px}.label{font-size:12px;color:var(--muted)}.row{display:flex;justify-content:space-between;gap:12px;align-items:center}.accent{color:var(--gold)}.green{color:var(--green)}.muted{line-height:1.6}
+button,input,select{font:inherit}button{cursor:pointer}.primary{background:var(--gold);color:#171717;border:0;border-radius:11px;padding:12px 15px;font-weight:700}.ghost{background:var(--panel2);color:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.field{display:grid;gap:6px;margin:12px 0}.field label{font-size:12px;color:var(--muted)}input,select{width:100%;background:#111c2c;color:#fff;border:1px solid var(--line);border-radius:10px;padding:11px}
+.horse{padding:12px 0;border-bottom:1px solid var(--line)}.horse:last-child{border:0}.tag{font-size:11px;border-radius:6px;background:#463b28;color:#ffe0a1;padding:4px 7px}.tabbar{position:fixed;z-index:5;bottom:0;left:0;right:0;background:#111b2b;border-top:1px solid var(--line);padding:8px max(8px,env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(5,1fr);gap:4px}.tab{background:transparent;border:0;color:var(--muted);border-radius:10px;padding:8px 2px;font-size:11px;display:grid;gap:4px;justify-items:center}.tab span:first-child{font-size:18px}.tab[aria-selected=true]{background:#463b28;color:#ffe0a1}.panel[hidden]{display:none}.notice{font-size:12px;color:var(--muted);line-height:1.6}.big{font-size:25px;font-weight:750}.line{height:1px;background:var(--line);margin:14px 0}
+@media(min-width:650px){.tabbar{left:50%;transform:translateX(-50%);width:min(760px,100%);border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0}.app{padding-top:30px}.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<div class="app">
+<header><div><h1>UMA AI</h1><small>VALUE RACING ASSISTANT</small></div><span class="pill">画面プレビュー</span></header>
+
+<section class="panel" id="home" role="tabpanel" aria-labelledby="tab-home">
+ <div class="card"><div class="row"><h2>今週のレース</h2><span class="pill">デモ表示</span></div><p class="muted">開催情報・データ取得状況・注目レースをホームに集約。</p><div class="grid"><div class="metric"><span class="label">データ状態</span><b class="green">確認待ち</b></div><div class="metric"><span class="label">予想対象</span><b>全レース</b></div></div></div>
+ <div class="card"><h2>レースを選ぶ</h2><div class="field"><label for="race">開催・レース</label><select id="race"><option>東京 11R</option><option>京都 11R</option><option>福島 11R</option></select></div><div class="field"><label for="budget">予算（円）</label><input id="budget" type="number" value="1000" min="100" step="100"></div><button class="primary" id="toForecast">予想画面へ</button></div>
+ <div class="card"><h2>この画面で見るもの</h2><p class="muted">開催状況、レース選択、全レーススカウターへの入口をまとめます。データ未取得の情報は推測表示しません。</p></div>
+</section>
+
+<section class="panel" id="forecast" role="tabpanel" aria-labelledby="tab-forecast" hidden>
+ <div class="row"><div><h2>予想・Value AI</h2><p class="muted">馬の評価と買い目候補を確認</p></div><span class="tag">デモデータ</span></div>
+ <div class="card"><div class="row"><h3>東京 11R｜サンプルレース</h3><span class="pill">分析例</span></div>
+  <div class="horse"><div class="row"><b>⑧ サンプルホースA</b><span class="accent">評価 82</span></div><div class="notice">近走・距離適性・馬場適性の評価例</div></div>
+  <div class="horse"><div class="row"><b>③ サンプルホースB</b><span class="accent">評価 76</span></div><div class="notice">人気とのギャップを確認する候補例</div></div>
+  <div class="horse"><div class="row"><b>⑫ サンプルホースC</b><span class="accent">評価 71</span></div><div class="notice">データ充足率も併せて表示する想定</div></div>
+ </div>
+ <div class="card"><h2>買い目候補</h2><p class="muted">券種・組合せ・根拠・見送り判定をここに表示します。実オッズ未取得の組合せは払戻を計算しません。</p><button class="ghost" id="toPayout">払戻見込みを確認</button></div>
+</section>
+
+<section class="panel" id="payout" role="tabpanel" aria-labelledby="tab-payout" hidden>
+ <h2>払戻見込み</h2><p class="muted">買い目ごとに購入額と対象券種のオッズを入力すると概算します。</p>
+ <div class="card">
+  <div class="field"><label for="ticket">券種・買い目</label><input id="ticket" value="馬連 3－8"></div>
+  <div class="grid"><div class="field"><label for="stake">購入金額（円）</label><input id="stake" type="number" min="100" step="100" value="100"></div><div class="field"><label for="odds">対象券種のオッズ（倍）</label><input id="odds" type="number" min="1" step="0.1" value="25.6"></div></div>
+  <div class="line"></div><div class="row"><span class="muted">的中時の払戻見込み</span><b class="big green" id="payoutValue">¥2,560</b></div><div class="row" style="margin-top:8px"><span class="muted">差引損益</span><b id="profitValue" class="accent">＋¥2,460</b></div>
+  <p class="notice" id="calcNote">※25.6倍は画面動作確認用の仮入力です。実際のオッズではありません。</p>
+ </div>
+ <div class="card"><h3>オッズが取得できない場合</h3><div class="row"><b>3連単 3→8→12</b><span class="tag">オッズ未取得</span></div><p class="notice">単勝オッズから他券種の払戻を推定しません。対象券種の実オッズを取得または入力した場合のみ計算します。</p></div>
+</section>
+
+<section class="panel" id="verification" role="tabpanel" aria-labelledby="tab-verification" hidden>
+ <h2>検証・回収率</h2><div class="card"><h3>時系列バックテスト</h3><p class="muted">学習期間と未使用の検証期間を分け、年度別の精度を比較します。</p><div class="grid"><div class="metric"><span class="label">最高評価馬の勝率</span><b>—</b></div><div class="metric"><span class="label">上位3頭の的中率</span><b>—</b></div></div><p class="notice">実データで検証を実行するまでは数値を表示しません。</p></div><div class="card"><h3>回収率分析</h3><p class="muted">公式払戻と購入時点のオッズが揃ったデータのみで算出。学習に使った期間と検証期間を分離します。</p></div></section>
+
+<section class="panel" id="data" role="tabpanel" aria-labelledby="tab-data" hidden>
+ <h2>データ管理</h2><div class="card"><h3>過去成績データ</h3><p class="muted">CSV取込・重複整理・端末内保存の状態をまとめます。</p><div class="row"><span class="muted">端末内の保存件数</span><b>既存データを維持</b></div><div class="line"></div><div class="row"><span class="muted">クラウドバックアップ</span><span class="green">既存機能を維持</span></div><p class="notice">このプレビューは表示だけの見本です。CSV取込やクラウド操作は実行しません。</p></div><div class="card"><h3>データ操作</h3><p class="muted">履歴CSVの追加、非公開クラウドへのバックアップ、復元、件数確認をここに配置します。</p></div></section>
+</div>
+
+<nav class="tabbar" role="tablist" aria-label="メインメニュー">
+ <button class="tab" id="tab-home" role="tab" aria-controls="home" aria-selected="true"><span>⌂</span><span>ホーム</span></button>
+ <button class="tab" id="tab-forecast" role="tab" aria-controls="forecast" aria-selected="false" tabindex="-1"><span>♞</span><span>予想</span></button>
+ <button class="tab" id="tab-payout" role="tab" aria-controls="payout" aria-selected="false" tabindex="-1"><span>￥</span><span>払戻</span></button>
+ <button class="tab" id="tab-verification" role="tab" aria-controls="verification" aria-selected="false" tabindex="-1"><span>▤</span><span>検証</span></button>
+ <button class="tab" id="tab-data" role="tab" aria-controls="data" aria-selected="false" tabindex="-1"><span>▦</span><span>データ</span></button>
+</nav>
+<script>
+const tabs=[...document.querySelectorAll('[role="tab"]')];
+function activate(id){tabs.forEach(t=>{const active=t.id==='tab-'+id;t.setAttribute('aria-selected',String(active));t.tabIndex=active?0:-1;document.getElementById(t.getAttribute('aria-controls')).hidden=!active;});}
+tabs.forEach((t,i)=>{t.addEventListener('click',()=>activate(t.id.replace('tab-','')));t.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();let n=i;if(e.key==='ArrowRight')n=(i+1)%tabs.length;if(e.key==='ArrowLeft')n=(i+tabs.length-1)%tabs.length;if(e.key==='Home')n=0;if(e.key==='End')n=tabs.length-1;tabs[n].focus();tabs[n].click();});});
+document.getElementById('toForecast').addEventListener('click',()=>activate('forecast'));
+document.getElementById('toPayout').addEventListener('click',()=>activate('payout'));
+const yen=n=>'¥'+Math.round(n).toLocaleString('ja-JP');
+function calculate(){const stake=Math.max(0,Number(document.getElementById('stake').value)||0),odds=Number(document.getElementById('odds').value),payout=Number.isFinite(odds)&&odds>0?stake*odds:null;document.getElementById('payoutValue').textContent=payout===null?'—':yen(payout);const profit=payout===null?null:payout-stake;document.getElementById('profitValue').textContent=profit===null?'—':(profit>=0?'＋':'−')+yen(Math.abs(profit));}
+['stake','odds'].forEach(id=>document.getElementById(id).addEventListener('input',calculate));
+</script>
+</body>
+</html>
