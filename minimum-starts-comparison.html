@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101827">
+<title>UMA AI - 最低出走数比較バックテスト</title>
+<style>
+:root{color-scheme:dark;--bg:#101827;--panel:#1b2638;--muted:#a9b5c7;--line:#344258;--gold:#e4b65e;--green:#65c99a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f5f7fb;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
+main{max-width:760px;margin:auto;padding:22px 16px 48px}h1{font-size:23px;margin:0 0 8px}h2{font-size:16px;margin:0 0 12px}
+p,.note{color:var(--muted);font-size:13px;line-height:1.7}.card{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:16px;margin:14px 0}
+button{width:100%;padding:14px;border:0;border-radius:10px;background:var(--gold);color:#171717;font-weight:700;font-size:15px}
+button:disabled{opacity:.55}.result{white-space:pre-wrap;line-height:1.7;font-size:13px;overflow-wrap:anywhere}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}th,td{padding:9px 6px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}th{color:var(--muted);font-weight:600}
+.status{color:var(--green);font-size:13px;min-height:22px}.warn{color:#f0c879}.back{color:var(--gold);text-decoration:none;font-size:13px}
+</style>
+</head>
+<body>
+<main>
+<a class="back" href="./">← UMA AIに戻る</a>
+<h1>最低出走数・比較バックテスト</h1>
+<p>現在の採点式・配点を固定したまま、最低3走／2走／1走の3条件を、同じ時系列ホールドアウト期間で比較します。</p>
+<div class="card">
+<h2>実行条件</h2>
+<div class="result">学習期間：全日付の前半60%
+検証期間：後半40%（学習に未使用）
+比較条件：最低3走・最低2走・最低1走
+指標：最高スコア馬の勝率、上位3頭以内の勝ち馬率、ランダム基準、Brier score</div>
+<p class="note">各条件ごとに過去の学習データだけで勝率校正をやり直します。将来データの混入を避けるため、検証期間の着順は校正に使いません。</p>
+<button id="run">比較バックテストを実行</button>
+<div id="status" class="status" role="status" style="margin-top:12px">待機中</div>
+</div>
+<div class="card">
+<h2>全体比較</h2>
+<div id="overall" class="result">まだ実行していません。</div>
+</div>
+<div class="card">
+<h2>年齢別の対象馬数・実際の勝ち数</h2>
+<div id="ages" class="result">まだ実行していません。</div>
+<p class="note">年齢別欄は、各条件で予想対象に入った馬の頭数と、その中で実際に勝った頭数の集計です。年齢別の順位精度そのものではないため、全体比較と分けて判断してください。</p>
+</div>
+<div class="card">
+<h2>確認事項</h2>
+<div id="notes" class="result">このページは読み取り専用です。採点式・配点・最低3走の本番条件・保存データ・クラウドバックアップは変更しません。</div>
+</div>
+</main>
+<script src="./value-model.js"></script>
+<script src="./history-store.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const pct=n=>Number.isFinite(n)?(n*100).toFixed(1)+'%':'—';
+const ageOf=row=>{
+ const match=String(row.sexAge||'').match(/(\d{1,2})/);
+ if(!match)return '年齢不明';
+ const age=Number(match[1]);
+ if(age===2)return '2歳';
+ if(age===3)return '3歳';
+ if(age>=4)return '4歳以上';
+ return '年齢不明';
+};
+const fmt=n=>Number(n||0).toLocaleString('ja-JP');
+$('run').addEventListener('click',async()=>{
+ const button=$('run');button.disabled=true;
+ $('overall').textContent='計算中…';$('ages').textContent='計算中…';$('notes').textContent='保存済みデータを読み込み、各条件を同じ検証期間で評価しています。';
+ try{
+  if(!window.UMAIValueModel||!window.UMAIHistoryStore)throw new Error('分析エンジンまたは履歴保存機能を読み込めません。UMA AIのメイン画面から開き直してください。');
+  const rows=await UMAIHistoryStore.getRows();
+  if(!rows.length)throw new Error('このブラウザに過去成績がありません。UMA AI本体で保存済みデータを確認してください。');
+  const history=UMAIValueModel.prepareHistory(rows);
+  const thresholds=[3,2,1],reports=[];
+  for(const minStarts of thresholds){
+   $('status').textContent='最低'+minStarts+'走の条件を検証しています…';
+   await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+   reports.push({minStarts,result:UMAIValueModel.runChronologicalBacktest(history,{minStarts})});
+  }
+  const failed=reports.filter(x=>!x.result.ready);
+  if(failed.length){
+   $('overall').textContent=failed.map(x=>'最低'+x.minStarts+'走：検証できません（'+x.result.reason+'）').join('\n');
+   $('ages').textContent='比較条件の一部で検証を完了できなかったため、年齢別集計も保留しました。';
+   $('notes').textContent='学習サンプル不足などの理由を確認してください。保存データは変更されていません。';
+   $('status').textContent='一部条件で検証未完了';
+   return;
+  }
+  const lines=reports.map(({minStarts,result:r})=>
+   '最低'+minStarts+'走：\n'+
+   '  採点馬 '+fmt(r.scoredHorses)+'頭／対象外 '+fmt(r.skippedHorses)+'頭\n'+
+   '  検証レース '+fmt(r.evaluatedRaces)+'レース\n'+
+   '  最高スコア馬の勝率 '+pct(r.top1Rate)+'（'+fmt(r.top1Hits)+'レース）\n'+
+   '  上位3頭以内に勝ち馬 '+pct(r.top3Rate)+'（'+fmt(r.top3Hits)+'レース）\n'+
+   '  ランダム基準（最高1頭） '+pct(r.randomTop1Baseline)+'／（上位3頭） '+pct(r.randomTop3Baseline)+'\n'+
+   '  Brier score '+(r.brierScore==null?'—':r.brierScore.toFixed(4))
+  );
+  const first=reports[0].result;
+  $('overall').textContent='学習：'+first.trainStart+'〜'+first.trainEnd+'\n検証：'+first.testStart+'〜'+first.testEnd+'\n\n'+lines.join('\n\n');
+  const validRows=history.rows.filter(r=>r.date>=first.testStart&&r.date<=first.testEnd&&r.finish!=null);
+  const ageRows=[];
+  for(const row of validRows){
+   const scored=UMAIValueModel.scoreHorse({horse:row.horse,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,jockey:row.jockey},history,row.date);
+   ageRows.push({age:ageOf(row),starts:scored.starts,score:scored.score,finish:row.finish});
+  }
+  const ageLabels=['2歳','3歳','4歳以上','年齢不明'];
+  const ageLines=[];
+  for(const minStarts of thresholds){
+   const eligible=ageRows.filter(r=>r.score!=null&&r.starts>=minStarts);
+   ageLines.push('最低'+minStarts+'走（対象 '+fmt(eligible.length)+'頭）');
+   for(const label of ageLabels){
+    const group=eligible.filter(r=>r.age===label);
+    const wins=group.filter(r=>r.finish===1).length;
+    ageLines.push('  '+label+'：'+fmt(group.length)+'頭／勝ち '+fmt(wins)+'頭');
+   }
+  }
+  $('ages').textContent=ageLines.join('\n');
+  $('notes').textContent='検証期間・採点式・配点は共通です。各条件の勝率校正はそれぞれの学習期間だけで実施しました。年齢別の勝ち数は対象馬の構成確認用で、年齢だけを根拠に条件を変更するものではありません。回収率は単勝オッズ・公式払戻データの検証が済んでいないため算出していません。結果はブラウザ内の保存済みデータを読み取っただけで、データやバックアップへの書き込みは行っていません。';
+  $('status').textContent='比較完了';
+ }catch(error){
+  $('overall').textContent='エラー：'+error.message;
+  $('ages').textContent='集計できませんでした。';
+  $('notes').textContent='保存済みデータへの変更は行っていません。';
+  $('status').textContent='実行できませんでした';
+ }finally{button.disabled=false;}
+});
+</script>
+</body>
+</html>
