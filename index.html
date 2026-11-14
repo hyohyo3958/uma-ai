@@ -306,7 +306,7 @@ document.getElementById('runNameHistoryDiagnostic').addEventListener('click',asy
   if(!rows.length)throw new Error('過去成績が保存されていません。');
   const history=UMAIValueModel.prepareHistory(rows);
   const reports=UMAIValueModel.diagnoseNoHistoryNames(history);
-  const lines=reports.map(r=>'■ '+r.year+'年\\n履歴なし：'+r.noHistory.toLocaleString('ja-JP')+'頭\\n表記を正規化すると過去履歴あり：'+r.normalizedPriorMatch.toLocaleString('ja-JP')+'頭\\n同じ正規化名はあるが過去履歴なし：'+r.onlyLaterHistory.toLocaleString('ja-JP')+'頭\\n取り込みデータ内に一致名なし：'+r.noNameMatchInImportedData.toLocaleString('ja-JP')+'頭'+(r.examples.length?'\\n表記違いの例：\\n'+r.examples.map(x=>'「'+x.entrant+'」⇔過去「'+x.priorName+'」').join('\\n'):''));
+  const lines=reports.map(r=>'■ '+r.year+'年\\n履歴なし：'+r.noHistory.toLocaleString('ja-JP')+'頭\\n表記を正規化すると過去履歴あり：'+r.normalizedPriorMatch.toLocaleString('ja-JP')+'頭\\n同じ正規化名はあるが過去履歴なし：'+r.onlyLaterHistory.toLocaleString('ja-JP')+'頭\\n取り込みデータ内に一致名なし：'+r.noNameMatchInImportedData.toLocaleString('ja-JP')+'頭\\n履歴なし馬の年齢：2歳 '+r.age2.toLocaleString('ja-JP')+'頭／3歳 '+r.age3.toLocaleString('ja-JP')+'頭／4歳以上 '+r.age4Plus.toLocaleString('ja-JP')+'頭／不明 '+r.ageUnknown.toLocaleString('ja-JP')+'頭'+(r.examples.length?'\\n表記違いの例：\\n'+r.examples.map(x=>'「'+x.entrant+'」⇔過去「'+x.priorName+'」').join('\\n'):''));
   out.textContent='【履歴なし馬・名前照合診断】\\n'+(lines.join('\\n\\n')||'診断対象がありません。')+'\\n\\n※全角半角・空白を正規化した診断のみです。既存の完全一致ルール、採点結果、保存データは変更していません。「正規化すると過去履歴あり」は表記ゆれ候補であり、同一馬と断定したものではありません。';
  }catch(error){out.textContent='診断に失敗しました：'+error.message;}
  finally{button.disabled=false;}
