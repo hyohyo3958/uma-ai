@@ -113,6 +113,8 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <div id="historicalBacktestResult" class="result muted" style="margin-top:12px">過去成績を読み込み、時系列で精度を検証します。</div>
 <button class="primary" id="runYearlyBacktest" style="width:100%;margin-top:8px">年度別バックテストを実行</button>
 <div id="yearlyBacktestResult" class="result muted" style="margin-top:12px">各年の成績を、前年までのデータだけで校正して比較します。</div>
+<button id="runNameHistoryDiagnostic" style="width:100%;margin-top:8px">履歴なし馬の名前照合を診断</button>
+<div id="nameHistoryDiagnosticResult" class="result muted" style="margin-top:12px">既存の名前照合は変更せず、表記ゆれで過去履歴が見つかる可能性だけを調べます。</div>
 <p class="stat">採点結果CSVにレース後の着順と単勝払戻（100円あたり）を追記して読み込むと、上位評価馬の成績を検証します。</p>
 <label for="backtestFile">着順を追記したCSV</label><input id="backtestFile" type="file" accept=".csv,text/csv">
 <button class="primary" id="runBacktest">検証・回収率を計算</button>
@@ -291,6 +293,22 @@ document.getElementById('runYearlyBacktest').addEventListener('click',async()=>{
    return '■ '+r.year+'年\\n学習期間：'+r.trainStart+'〜'+r.trainEnd+'（'+r.trainRaces.toLocaleString('ja-JP')+'レース）\\n検証期間：'+r.testStart+'〜'+r.testEnd+'（'+r.testRaces.toLocaleString('ja-JP')+'レース）\\n校正サンプル：'+r.calibrationSamples.toLocaleString('ja-JP')+'頭\\n採点馬：'+r.scoredHorses.toLocaleString('ja-JP')+'頭／対象外：'+r.skippedHorses.toLocaleString('ja-JP')+'頭\\n検証レース：'+r.evaluatedRaces.toLocaleString('ja-JP')+'\\n最高スコア馬の勝率：'+pct(r.top1Rate)+'（'+r.top1Hits+'/'+r.evaluatedRaces+'）／ランダム目安：'+pct(r.randomTop1Baseline)+'\\n上位3頭以内の勝率：'+pct(r.top3Rate)+'（'+r.top3Hits+'/'+r.evaluatedRaces+'）／ランダム目安：'+pct(r.randomTop3Baseline)+'\\nBrier score：'+(r.brierScore==null?'—':r.brierScore.toFixed(4))+'\\n【対象外の内訳】履歴なし：'+r.exclusionDiagnostics.noHistory.toLocaleString('ja-JP')+'頭／1〜2走：'+r.exclusionDiagnostics.oneOrTwoStarts.toLocaleString('ja-JP')+'頭／3走以上でスコアなし：'+r.exclusionDiagnostics.noScoreWithEnoughStarts.toLocaleString('ja-JP')+'頭／スコアはあるが最低出走数未満：'+r.exclusionDiagnostics.scoredButBelowMinimumStarts.toLocaleString('ja-JP')+'頭'+(r.exclusionDiagnostics.noScoreWithEnoughStarts?'\\n【スコアなし時の不足項目（重複あり）】近走：'+r.missingComponentsWhenUnscored.recent+'／コース：'+r.missingComponentsWhenUnscored.course+'／芝ダート：'+r.missingComponentsWhenUnscored.surface+'／距離：'+r.missingComponentsWhenUnscored.distance+'／馬場：'+r.missingComponentsWhenUnscored.going+'／騎手：'+r.missingComponentsWhenUnscored.jockey+'／経験：'+r.missingComponentsWhenUnscored.experience:'');
   }).join('\\n\\n')+'\\n\\n注意：各年の検証では、その年より前のデータだけで確率校正しています。回収率・利益を示すものではありません。';
  }catch(error){out.textContent='年度別検証に失敗しました：'+error.message;}
+ finally{button.disabled=false;}
+});
+
+document.getElementById('runNameHistoryDiagnostic').addEventListener('click',async()=>{
+ const out=document.getElementById('nameHistoryDiagnosticResult');
+ const button=document.getElementById('runNameHistoryDiagnostic');
+ button.disabled=true;
+ out.textContent='過去成績の馬名を正規化して、履歴なし馬を照合しています…';
+ try{
+  const rows=await UMAIHistoryStore.getRows();
+  if(!rows.length)throw new Error('過去成績が保存されていません。');
+  const history=UMAIValueModel.prepareHistory(rows);
+  const reports=UMAIValueModel.diagnoseNoHistoryNames(history);
+  const lines=reports.map(r=>'■ '+r.year+'年\\n履歴なし：'+r.noHistory.toLocaleString('ja-JP')+'頭\\n表記を正規化すると過去履歴あり：'+r.normalizedPriorMatch.toLocaleString('ja-JP')+'頭\\n同じ正規化名はあるが過去履歴なし：'+r.onlyLaterHistory.toLocaleString('ja-JP')+'頭\\n取り込みデータ内に一致名なし：'+r.noNameMatchInImportedData.toLocaleString('ja-JP')+'頭'+(r.examples.length?'\\n表記違いの例：\\n'+r.examples.map(x=>'「'+x.entrant+'」⇔過去「'+x.priorName+'」').join('\\n'):''));
+  out.textContent='【履歴なし馬・名前照合診断】\\n'+(lines.join('\\n\\n')||'診断対象がありません。')+'\\n\\n※全角半角・空白を正規化した診断のみです。既存の完全一致ルール、採点結果、保存データは変更していません。「正規化すると過去履歴あり」は表記ゆれ候補であり、同一馬と断定したものではありません。';
+ }catch(error){out.textContent='診断に失敗しました：'+error.message;}
  finally{button.disabled=false;}
 });
 

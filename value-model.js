@@ -372,6 +372,44 @@
   }
 
 
+  // Diagnose exact horse-name misses without changing production matching or scores.
+  function diagnoseNoHistoryNames(history) {
+    const rows = (history.rows || []).filter(r => r.date && r.finish != null && !isNonRunner(r));
+    const normalizeHorseName = value => text(value).normalize("NFKC").replace(/[\\s\\u3000]+/g, "").toLowerCase();
+    const byNormalizedName = new Map();
+    rows.forEach(row => {
+      const key = normalizeHorseName(row.horse);
+      if (!key) return;
+      if (!byNormalizedName.has(key)) byNormalizedName.set(key, []);
+      byNormalizedName.get(key).push(row);
+    });
+    const years = Array.from(new Set(rows.map(r => r.date.slice(0, 4)))).sort();
+    return years.map(year => {
+      const testRows = rows.filter(r => r.date.slice(0, 4) === year);
+      const result = { year, noHistory: 0, normalizedPriorMatch: 0, onlyLaterHistory: 0, noNameMatchInImportedData: 0, examples: [] };
+      testRows.forEach(row => {
+        const exactPrior = (history.byHorse.get(row.horse) || []).some(past => past.date < row.date);
+        if (exactPrior) return;
+        result.noHistory++;
+        const key = normalizeHorseName(row.horse);
+        const variants = byNormalizedName.get(key) || [];
+        const priorVariants = variants.filter(past => past.date < row.date);
+        if (priorVariants.length) {
+          result.normalizedPriorMatch++;
+          const differentName = priorVariants.find(past => past.horse !== row.horse);
+          if (differentName && result.examples.length < 8) {
+            result.examples.push({ entrant: row.horse, priorName: differentName.horse });
+          }
+        } else if (variants.length) {
+          result.onlyLaterHistory++;
+        } else {
+          result.noNameMatchInImportedData++;
+        }
+      });
+      return result;
+    }).filter(r => r.noHistory > 0);
+  }
+
   // Year-by-year walk-forward report: each test year is calibrated only with
   // finished races strictly before that calendar year.
   function runYearlyBacktests(history, options) {
@@ -475,6 +513,7 @@
     buildWalkForwardCalibration,
     runChronologicalBacktest,
     runYearlyBacktests,
+    diagnoseNoHistoryNames,
     evaluateRaceValue
   };
 })(typeof window !== "undefined" ? window : globalThis);
