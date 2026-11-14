@@ -267,7 +267,7 @@ $('run').addEventListener('click',async()=>{
    processed++;
    eligible.forEach(h=>{
     const bin=calibration.bins[Math.min(19,Math.floor(h.score/5))];
-    if(bin&&Number.isFinite(bin.probability))calibrationDiagnosticRows.push({score:h.score,probability:bin.probability,hit:h.finish===1,venue:h.venue,surface:h.surface,distance:h.distance,going:h.going,sexAge:h.sexAge,fieldSize:group.length});
+    if(bin&&Number.isFinite(bin.probability))calibrationDiagnosticRows.push({score:h.score,probability:bin.probability,hit:h.finish===1,venue:h.venue,surface:h.surface,distance:h.distance,going:h.going,sexAge:h.sexAge,fieldSize:group.filter(row=>!/競走除外|出走取消|取消/.test(row.status||'')).length});
    });
    const sorted=eligible.slice().sort((a,b)=>b.score-a.score);
    const bestScore=sorted[0].score,top=sorted.filter(h=>h.score===bestScore);
