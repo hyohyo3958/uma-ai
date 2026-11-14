@@ -458,7 +458,8 @@
     scoreHorse,
     calibrateWinProbability,
     buildWalkForwardCalibration,
-    runChronologicalBacktest,\n    runYearlyBacktests,
+    runChronologicalBacktest,
+    runYearlyBacktests,
     evaluateRaceValue
   };
 })(typeof window !== "undefined" ? window : globalThis);
