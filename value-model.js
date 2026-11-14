@@ -416,6 +416,40 @@
     }).filter(r => r.noHistory > 0);
   }
 
+  // Read-only diagnostic for horses with one or two prior starts.
+  function diagnoseShortHistoryHorses(history) {
+    const rows = (history.rows || []).filter(r => r.date && r.finish != null && !isNonRunner(r));
+    const years = Array.from(new Set(rows.map(r => r.date.slice(0, 4)))).sort();
+    return years.map(year => {
+      const report = {
+        year, oneStart: 0, twoStarts: 0, scoreAvailable: 0, scoreUnavailable: 0,
+        age: {
+          oneStart: { age2: 0, age3: 0, age4Plus: 0, unknown: 0 },
+          twoStarts: { age2: 0, age3: 0, age4Plus: 0, unknown: 0 }
+        }
+      };
+      rows.filter(row => row.date.slice(0, 4) === year).forEach(row => {
+        const past = (history.byHorse.get(row.horse) || []).filter(p => p.date < row.date);
+        if (past.length !== 1 && past.length !== 2) return;
+        const bucket = past.length === 1 ? "oneStart" : "twoStarts";
+        report[bucket]++;
+        const ageMatch = text(row.sexAge).match(/(\\d{1,2})/);
+        const age = ageMatch ? Number(ageMatch[1]) : null;
+        if (age === 2) report.age[bucket].age2++;
+        else if (age === 3) report.age[bucket].age3++;
+        else if (age != null && age >= 4) report.age[bucket].age4Plus++;
+        else report.age[bucket].unknown++;
+        const scored = scoreHorse({
+          horse: row.horse, venue: row.venue, surface: row.surface,
+          distance: row.distance, going: row.going, jockey: row.jockey
+        }, history, row.date);
+        if (scored.score == null) report.scoreUnavailable++;
+        else report.scoreAvailable++;
+      });
+      return report;
+    }).filter(r => r.oneStart + r.twoStarts > 0);
+  }
+
   // Year-by-year walk-forward report: each test year is calibrated only with
   // finished races strictly before that calendar year.
   function runYearlyBacktests(history, options) {
@@ -520,6 +554,7 @@
     runChronologicalBacktest,
     runYearlyBacktests,
     diagnoseNoHistoryNames,
+    diagnoseShortHistoryHorses,
     evaluateRaceValue
   };
 })(typeof window !== "undefined" ? window : globalThis);
