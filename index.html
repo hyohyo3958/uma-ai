@@ -111,6 +111,8 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <p class="stat">保存済みの過去成績を日付順に分割し、前半60%だけで勝率校正、後半40%を未使用データとして検証します。未来の結果を学習に混ぜない方式です。</p>
 <button class="primary" id="runHistoricalBacktest" style="width:100%;margin-top:8px">2025年の時系列バックテストを実行</button>
 <div id="historicalBacktestResult" class="result muted" style="margin-top:12px">過去成績を読み込み、時系列で精度を検証します。</div>
+<button class="primary" id="runYearlyBacktest" style="width:100%;margin-top:8px">年度別バックテストを実行</button>
+<div id="yearlyBacktestResult" class="result muted" style="margin-top:12px">各年の成績を、前年までのデータだけで校正して比較します。</div>
 <p class="stat">採点結果CSVにレース後の着順と単勝払戻（100円あたり）を追記して読み込むと、上位評価馬の成績を検証します。</p>
 <label for="backtestFile">着順を追記したCSV</label><input id="backtestFile" type="file" accept=".csv,text/csv">
 <button class="primary" id="runBacktest">検証・回収率を計算</button>
@@ -270,6 +272,27 @@ document.getElementById('runValueAi').addEventListener('click',async()=>{
 });
 
 
+
+
+document.getElementById('runYearlyBacktest').addEventListener('click',async()=>{
+ const out=document.getElementById('yearlyBacktestResult');
+ const button=document.getElementById('runYearlyBacktest');
+ button.disabled=true;
+ out.textContent='各年の検証を実行しています。年ごとに、それ以前のデータだけで勝率校正を行います…';
+ try{
+  const rows=await UMAIHistoryStore.getRows();
+  if(!rows.length)throw new Error('過去成績が保存されていません。');
+  const history=UMAIValueModel.prepareHistory(rows);
+  const reports=UMAIValueModel.runYearlyBacktests(history);
+  if(!reports.length)throw new Error('年度別に比較できるデータがありません。少なくとも前年の学習データが必要です。');
+  const pct=n=>n==null?'—':(n*100).toFixed(1)+'%';
+  out.textContent='【年度別・時系列バックテスト】\\n'+reports.map(r=>{
+   if(!r.ready)return '■ '+r.year+'年：検証不可（'+r.reason+'）\\n学習サンプル：'+(r.calibrationSamples||0).toLocaleString('ja-JP')+'頭';
+   return '■ '+r.year+'年\\n学習期間：'+r.trainStart+'〜'+r.trainEnd+'（'+r.trainRaces.toLocaleString('ja-JP')+'レース）\\n検証期間：'+r.testStart+'〜'+r.testEnd+'（'+r.testRaces.toLocaleString('ja-JP')+'レース）\\n校正サンプル：'+r.calibrationSamples.toLocaleString('ja-JP')+'頭\\n採点馬：'+r.scoredHorses.toLocaleString('ja-JP')+'頭／対象外：'+r.skippedHorses.toLocaleString('ja-JP')+'頭\\n検証レース：'+r.evaluatedRaces.toLocaleString('ja-JP')+'\\n最高スコア馬の勝率：'+pct(r.top1Rate)+'（'+r.top1Hits+'/'+r.evaluatedRaces+'）／ランダム目安：'+pct(r.randomTop1Baseline)+'\\n上位3頭以内の勝率：'+pct(r.top3Rate)+'（'+r.top3Hits+'/'+r.evaluatedRaces+'）／ランダム目安：'+pct(r.randomTop3Baseline)+'\\nBrier score：'+(r.brierScore==null?'—':r.brierScore.toFixed(4));
+  }).join('\\n\\n')+'\\n\\n注意：各年の検証では、その年より前のデータだけで確率校正しています。回収率・利益を示すものではありません。';
+ }catch(error){out.textContent='年度別検証に失敗しました：'+error.message;}
+ finally{button.disabled=false;}
+});
 
 document.getElementById('runHistoricalBacktest').addEventListener('click',async()=>{
  const out=document.getElementById('historicalBacktestResult');
