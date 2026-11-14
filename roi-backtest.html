@@ -98,6 +98,67 @@ function calibrationReport(rows){
  const line=(label,items)=>{const n=items.length,wins=items.filter(r=>r.hit).length,estimated=items.reduce((a,r)=>a+r.probability,0);return label+'：'+fmt(n)+'頭 / 推定勝率 '+(n?pct(estimated/n):'—')+' / 実勝率 '+(n?pct(wins/n):'—')+' / 差 '+(n?((wins/n-estimated/n)*100).toFixed(1)+'pt':'—')+' / 実勝数 '+fmt(wins);};
  return '【勝率校正診断：スコア帯別（出走数条件を満たした全馬）】\\n'+ranges.map(b=>line(b.label,rows.filter(r=>r.score>=b.min&&r.score<b.max))).join('\\n')+'\\n\\n【勝率校正診断：5点刻み】\\n'+Array.from({length:9},(_,i)=>{const min=60+i*5,max=min+5;return line(min+'〜'+(max-1),rows.filter(r=>r.score>=min&&r.score<max));}).join('\\n');
 }
+
+function fitCalibrationComparators(trainingSamples){
+ const valid=trainingSamples.filter(s=>Number.isFinite(s.score)&&s.score>=0&&s.score<=100&&Number(s.finish)>0);
+ const wins=valid.filter(s=>Number(s.finish)===1).length;
+ const baseRate=valid.length?wins/valid.length:0.01;
+ // Logistic recalibration: probability = sigmoid(a + b * standardized score).
+ let a=Math.log(baseRate/(1-baseRate)),b=0;
+ for(let iter=0;iter<100;iter++){
+  let g0=0,g1=0,h00=1e-6,h01=0,h11=1e-6;
+  valid.forEach(s=>{
+   const x=(s.score-75)/10, y=Number(s.finish)===1?1:0;
+   const z=Math.max(-20,Math.min(20,a+b*x)),p=1/(1+Math.exp(-z)),w=Math.max(1e-8,p*(1-p));
+   g0+=y-p;g1+=(y-p)*x;h00+=w;h01+=w*x;h11+=w*x*x;
+  });
+  const det=h00*h11-h01*h01;
+  if(!det)break;
+  const da=(g0*h11-g1*h01)/det,db=(g1*h00-g0*h01)/det;
+  a+=da;b+=db;
+  if(Math.abs(da)+Math.abs(db)<1e-7)break;
+ }
+ // Isotonic regression with pool-adjacent-violators, sorted by score.
+ const sorted=valid.map(s=>({x:s.score,y:Number(s.finish)===1?1:0})).sort((x,y)=>x.x-y.x);
+ const blocks=[];
+ sorted.forEach(s=>{
+  blocks.push({min:s.x,max:s.x,n:1,wins:s.y});
+  while(blocks.length>1){
+   const right=blocks[blocks.length-1],left=blocks[blocks.length-2];
+   if(left.wins/left.n<=right.wins/right.n)break;
+   blocks.splice(blocks.length-2,2,{min:left.min,max:right.max,n:left.n+right.n,wins:left.wins+right.wins});
+  }
+ });
+ return {
+  logistic:score=>1/(1+Math.exp(-Math.max(-20,Math.min(20,a+b*((score-75)/10))))),
+  isotonic:score=>{
+   if(!blocks.length)return baseRate;
+   const block=blocks.find(v=>score<=v.max)||blocks[blocks.length-1];
+   return block.wins/block.n;
+  }
+ };
+}
+function comparatorReport(trainingSamples,testSamples){
+ const models=fitCalibrationComparators(trainingSamples);
+ const valid=testSamples.filter(r=>Number.isFinite(r.score)&&Number.isFinite(r.probability));
+ const rows=valid.map(r=>({score:r.score,hit:r.hit?1:0,baseline:r.probability,logistic:models.logistic(r.score),isotonic:models.isotonic(r.score)}));
+ const metrics=key=>{
+  const n=rows.length;if(!n)return '—';
+  const brier=rows.reduce((s,r)=>s+Math.pow(r[key]-r.hit,2),0)/n;
+  const eps=1e-12;
+  const logloss=rows.reduce((s,r)=>s-(r.hit?Math.log(Math.max(eps,r[key])):Math.log(Math.max(eps,1-r[key]))),0)/n;
+  return 'Brier '+brier.toFixed(5)+' / 対数損失 '+logloss.toFixed(5);
+ };
+ const bands=[{label:'60〜69',min:60,max:70},{label:'70〜79',min:70,max:80},{label:'80〜89',min:80,max:90},{label:'90〜100',min:90,max:101}];
+ const lines=bands.map(b=>{
+  const group=rows.filter(r=>r.score>=b.min&&r.score<b.max),n=group.length;
+  const rate=n?group.reduce((s,r)=>s+r.hit,0)/n:null;
+  const avg=k=>n?group.reduce((s,r)=>s+r[k],0)/n:null;
+  return b.label+'：'+fmt(n)+'頭 / 実勝率 '+pct(rate)+' / 現行 '+pct(avg('baseline'))+' / ロジスティック '+pct(avg('logistic'))+' / アイソトニック '+pct(avg('isotonic'));
+ });
+ return '【校正方式の比較（学習データで作成・対象年で評価）】\\n対象頭数：'+fmt(rows.length)+' / 学習サンプル：'+fmt(trainingSamples.length)+'\\n現行方式：'+metrics('baseline')+'\\nロジスティック：'+metrics('logistic')+'\\nアイソトニック：'+metrics('isotonic')+'\\n\\n【方式別・スコア帯ごとの推定勝率】\\n'+lines.join('\\n')+'\\n※本番の勝率・期待値判定には未適用。対象年の結果を見て方式を選び、その同じ年の回収率を独立成績として扱わないこと。';
+}
+
 $('priorCsv').addEventListener('change',async()=>{
  priorCsvRows=[];priorYears=[];
  const files=Array.from($('priorCsv').files||[]);
@@ -172,7 +233,7 @@ $('run').addEventListener('click',async()=>{
    });
   }
   const a=summarize(topBets),b=summarize(valueBets);
-  $('overall').textContent='【検証条件】\n対象期間：'+targetYear+'年 / 対象レース '+fmt(races.size)+' / 採点評価 '+fmt(processed)+'\n最低出走数：'+minStarts+'走以上 / 校正サンプル '+fmt(calibration.sampleCount)+'頭\n追加学習CSV：'+(priorCsvRows.length?priorYears.join(', ')+'年分':'なし')+'\n学習期間：'+training.reduce((m,r)=>!m||r.date<m?r.date:m,'')+'〜'+training.reduce((m,r)=>!m||r.date>m?r.date:m,'')+'\n採点対象外（採点不能・出走数不足等）：'+fmt(noScore)+'頭\n最高スコア同点で見送り：'+fmt(topTieRaces)+'レース\nオッズ不足レース（期待値買いの対象外）：'+fmt(noOddsRaces)+'\n\n'+display('【各レースの最高スコア馬を単勝100円】',a)+'\n\n'+display('【モデルの期待値条件を満たした馬を各100円】',b)+'\n\n'+calibrationReport(calibrationDiagnosticRows)+'\\n\\n'+bandReport('【期待値買い：スコア帯別】',valueDiagnosticRows,'score',[{label:'60〜69',min:60,max:70},{label:'70〜79',min:70,max:80},{label:'80〜89',min:80,max:90},{label:'90〜100',min:90,max:101}])+'\n\n'+bandReport('【期待値買い：最終オッズ帯別】',valueDiagnosticRows,'odds',[{label:'5〜9.9倍',min:5,max:10},{label:'10〜19.9倍',min:10,max:20},{label:'20〜49.9倍',min:20,max:50},{label:'50倍以上',min:50,max:Infinity}])+'\n\n'+bandReport('【期待値買い：期待払戻倍率別】',valueDiagnosticRows,'expectedReturn',[{label:'1.10〜1.49倍',min:1.1,max:1.5},{label:'1.50〜1.99倍',min:1.5,max:2},{label:'2.00〜2.99倍',min:2,max:3},{label:'3.00倍以上',min:3,max:Infinity}])+'\n\n※各帯は期待値条件を満たして実際に買い対象となった馬だけを集計。少数件の帯は参考値。最終オッズを用いた参考値。購入時点のオッズでの再現ではありません。';
+  $('overall').textContent='【検証条件】\n対象期間：'+targetYear+'年 / 対象レース '+fmt(races.size)+' / 採点評価 '+fmt(processed)+'\n最低出走数：'+minStarts+'走以上 / 校正サンプル '+fmt(calibration.sampleCount)+'頭\n追加学習CSV：'+(priorCsvRows.length?priorYears.join(', ')+'年分':'なし')+'\n学習期間：'+training.reduce((m,r)=>!m||r.date<m?r.date:m,'')+'〜'+training.reduce((m,r)=>!m||r.date>m?r.date:m,'')+'\n採点対象外（採点不能・出走数不足等）：'+fmt(noScore)+'頭\n最高スコア同点で見送り：'+fmt(topTieRaces)+'レース\nオッズ不足レース（期待値買いの対象外）：'+fmt(noOddsRaces)+'\n\n'+display('【各レースの最高スコア馬を単勝100円】',a)+'\n\n'+display('【モデルの期待値条件を満たした馬を各100円】',b)+'\n\n'+calibrationReport(calibrationDiagnosticRows)+'+'\\n\\n'+comparatorReport(samples,calibrationDiagnosticRows)\\n\\n'+bandReport('【期待値買い：スコア帯別】',valueDiagnosticRows,'score',[{label:'60〜69',min:60,max:70},{label:'70〜79',min:70,max:80},{label:'80〜89',min:80,max:90},{label:'90〜100',min:90,max:101}])+'\n\n'+bandReport('【期待値買い：最終オッズ帯別】',valueDiagnosticRows,'odds',[{label:'5〜9.9倍',min:5,max:10},{label:'10〜19.9倍',min:10,max:20},{label:'20〜49.9倍',min:20,max:50},{label:'50倍以上',min:50,max:Infinity}])+'\n\n'+bandReport('【期待値買い：期待払戻倍率別】',valueDiagnosticRows,'expectedReturn',[{label:'1.10〜1.49倍',min:1.1,max:1.5},{label:'1.50〜1.99倍',min:1.5,max:2},{label:'2.00〜2.99倍',min:2,max:3},{label:'3.00倍以上',min:3,max:Infinity}])+'\n\n※各帯は期待値条件を満たして実際に買い対象となった馬だけを集計。少数件の帯は参考値。最終オッズを用いた参考値。購入時点のオッズでの再現ではありません。';
   $('status').textContent='完了：本番設定・保存データは変更していません。';
  }catch(e){$('overall').textContent='検証できませんでした：'+e.message;$('status').textContent='エラー';}
  finally{button.disabled=false;}
