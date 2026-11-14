@@ -371,6 +371,85 @@
     };
   }
 
+
+  // Year-by-year walk-forward report: each test year is calibrated only with
+  // finished races strictly before that calendar year.
+  function runYearlyBacktests(history, options) {
+    const opts = Object.assign({ minStarts: 3, minSamples: 200 }, options || {});
+    const validRows = (history.rows || []).filter(r => r.date && r.finish != null && !isNonRunner(r));
+    const years = Array.from(new Set(validRows.map(r => r.date.slice(0, 4)))).sort();
+    const reports = [];
+    for (const year of years) {
+      const testRows = validRows.filter(r => r.date.slice(0, 4) === year);
+      const trainRows = validRows.filter(r => r.date.slice(0, 4) < year);
+      if (!trainRows.length || !testRows.length) continue;
+      const samples = [];
+      trainRows.forEach(row => {
+        const scored = scoreHorse({
+          horse: row.horse, venue: row.venue, surface: row.surface,
+          distance: row.distance, going: row.going, jockey: row.jockey
+        }, history, row.date);
+        if (scored.score != null && scored.starts >= opts.minStarts) {
+          samples.push({ score: scored.score, finish: row.finish });
+        }
+      });
+      const calibration = calibrateWinProbability(samples, opts.minSamples);
+      if (!calibration.ready) {
+        reports.push({ year, ready: false, reason: calibration.reason, calibrationSamples: calibration.sampleCount });
+        continue;
+      }
+      const races = new Map();
+      testRows.forEach(row => {
+        const key = raceKey(row);
+        if (!races.has(key)) races.set(key, []);
+        races.get(key).push(row);
+      });
+      let evaluatedRaces = 0, top1Hits = 0, top3Hits = 0;
+      let scoredHorses = 0, skippedHorses = 0, brierSum = 0, brierN = 0;
+      let randomTop1 = 0, randomTop3 = 0;
+      for (const group of races.values()) {
+        const scored = group.map(row => Object.assign({}, row, scoreHorse({
+          horse: row.horse, venue: row.venue, surface: row.surface,
+          distance: row.distance, going: row.going, jockey: row.jockey
+        }, history, row.date)));
+        const usable = scored.filter(h => h.score != null && h.starts >= opts.minStarts);
+        scoredHorses += usable.length;
+        skippedHorses += scored.length - usable.length;
+        if (usable.length < 2) continue;
+        evaluatedRaces++;
+        randomTop1 += 1 / usable.length;
+        randomTop3 += Math.min(3, usable.length) / usable.length;
+        const ranked = usable.slice().sort((a, b) => b.score - a.score);
+        const topScore = ranked[0].score;
+        if (ranked.filter(h => h.score === topScore).some(h => h.finish === 1)) top1Hits++;
+        const thirdScore = ranked[Math.min(2, ranked.length - 1)].score;
+        if (ranked.filter(h => h.score >= thirdScore).some(h => h.finish === 1)) top3Hits++;
+        usable.forEach(h => {
+          const bin = calibration.bins[Math.min(19, Math.floor(h.score / 5))];
+          brierSum += Math.pow(bin.probability - (h.finish === 1 ? 1 : 0), 2);
+          brierN++;
+        });
+      }
+      reports.push({
+        year, ready: evaluatedRaces > 0,
+        reason: evaluatedRaces ? "" : "採点可能なレースがありません。",
+        trainStart: trainRows.reduce((m, r) => !m || r.date < m ? r.date : m, ""),
+        trainEnd: trainRows.reduce((m, r) => !m || r.date > m ? r.date : m, ""),
+        testStart: testRows.reduce((m, r) => !m || r.date < m ? r.date : m, ""),
+        testEnd: testRows.reduce((m, r) => !m || r.date > m ? r.date : m, ""),
+        trainRaces: new Set(trainRows.map(raceKey)).size,
+        testRaces: races.size, evaluatedRaces, scoredHorses, skippedHorses,
+        calibrationSamples: calibration.sampleCount,
+        top1Hits, top3Hits, top1Rate: evaluatedRaces ? top1Hits / evaluatedRaces : null,
+        top3Rate: evaluatedRaces ? top3Hits / evaluatedRaces : null,
+        randomTop1Baseline: evaluatedRaces ? randomTop1 / evaluatedRaces : null,
+        randomTop3Baseline: evaluatedRaces ? randomTop3 / evaluatedRaces : null,
+        brierScore: brierN ? brierSum / brierN : null
+      });
+    }
+    return reports;
+  }
+
   root.UMAIValueModel = {
     version: "1.0.0",
     weights: WEIGHTS,
@@ -379,7 +458,7 @@
     scoreHorse,
     calibrateWinProbability,
     buildWalkForwardCalibration,
-    runChronologicalBacktest,
+    runChronologicalBacktest,\n    runYearlyBacktests,
     evaluateRaceValue
   };
 })(typeof window !== "undefined" ? window : globalThis);
