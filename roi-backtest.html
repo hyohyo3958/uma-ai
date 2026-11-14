@@ -159,6 +159,38 @@ function comparatorReport(trainingSamples,testSamples){
  return '【校正方式の比較（学習データで作成・対象年で評価）】\\n対象頭数：'+fmt(rows.length)+' / 学習サンプル：'+fmt(trainingSamples.length)+'\\n現行方式：'+metrics('baseline')+'\\nロジスティック：'+metrics('logistic')+'\\nアイソトニック：'+metrics('isotonic')+'\\n\\n【方式別・スコア帯ごとの推定勝率】\\n'+lines.join('\\n')+'\\n※本番の勝率・期待値判定には未適用。対象年の結果を見て方式を選び、その同じ年の回収率を独立成績として扱わないこと。';
 }
 
+
+function periodDriftReport(allSamples,targetRows){
+ const ordered=allSamples.filter(s=>s.date&&Number.isFinite(Number(s.score))&&Number(s.finish)>0).slice().sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+ const cut=Math.max(1,Math.floor(ordered.length*0.7));
+ const fit=ordered.slice(0,cut),hold=ordered.slice(cut);
+ const cal=UMAIValueModel.calibrateWinProbability(fit,200);
+ if(!cal.ready||!hold.length)return '【学習期間内の時系列診断】\n学習サンプル不足のため診断できません。';
+ const probability=score=>{const bin=cal.bins[Math.min(19,Math.floor(score/5))];return bin&&Number.isFinite(bin.probability)?bin.probability:cal.globalRate;};
+ const holdRows=hold.map(s=>({score:s.score,hit:Number(s.finish)===1?1:0,probability:probability(s.score)}));
+ const target=targetRows.filter(r=>Number.isFinite(r.score)&&Number.isFinite(r.probability)).map(r=>({score:r.score,hit:r.hit?1:0,probability:r.probability}));
+ const metrics=rows=>{
+  const n=rows.length;if(!n)return '—';
+  const b=rows.reduce((a,r)=>a+Math.pow(r.probability-r.hit,2),0)/n;
+  const e=1e-12,l=rows.reduce((a,r)=>a-(r.hit?Math.log(Math.max(e,r.probability)):Math.log(Math.max(e,1-r.probability))),0)/n;
+  const actual=rows.reduce((a,r)=>a+r.hit,0)/n,estimated=rows.reduce((a,r)=>a+r.probability,0)/n;
+  return fmt(n)+'頭 / 推定 '+pct(estimated)+' / 実際 '+pct(actual)+' / 差 '+((actual-estimated)*100).toFixed(2)+'pt / Brier '+b.toFixed(5)+' / 対数損失 '+l.toFixed(5);
+ };
+ const bands=[{label:'60〜69',min:60,max:70},{label:'70〜79',min:70,max:80},{label:'80〜89',min:80,max:90},{label:'90〜100',min:90,max:101}];
+ const bandLines=bands.map(b=>{
+  const rowSet=rows=>rows.filter(r=>r.score>=b.min&&r.score<b.max);
+  const summarizeSet=(name,items)=>{
+   const x=rowSet(items);if(!x.length)return name+' —';
+   const actual=x.reduce((a,r)=>a+r.hit,0)/x.length;
+   const estimated=x.reduce((a,r)=>a+r.probability,0)/x.length;
+   return name+' '+fmt(x.length)+'頭・推定 '+pct(estimated)+'・実際 '+pct(actual)+'・差 '+((actual-estimated)*100).toFixed(1)+'pt';
+  };
+  return b.label+'：'+summarizeSet('学習前半',fit.map(s=>({score:s.score,hit:Number(s.finish)===1?1:0,probability:probability(s.score)})))+' / '+summarizeSet('学習後半',holdRows)+' / '+summarizeSet('対象年',target);
+ });
+ const dateRange=x=>x.length?String(x[0].date)+'〜'+String(x[x.length-1].date):'—';
+ return '【学習期間と対象期間の時系列比較】\n学習前半（校正作成）：'+fmt(fit.length)+'頭 '+dateRange(fit)+'\n学習後半（未使用評価）：'+metrics(holdRows)+'（'+dateRange(hold)+'）\n対象年（従来の全学習データで校正）：'+metrics(target)+'\n\n【スコア帯別の分布・校正差】\n'+bandLines.join('\n')+'\n※学習期間を日付順に70%/30%分割。学習後半は前半だけで校正した未使用評価。対象年は対象年より前の全学習データで校正。';
+}
+
 $('priorCsv').addEventListener('change',async()=>{
  priorCsvRows=[];priorYears=[];
  const files=Array.from($('priorCsv').files||[]);
@@ -192,7 +224,7 @@ $('run').addEventListener('click',async()=>{
   const samples=[];
   training.forEach(row=>{
    const scored=UMAIValueModel.scoreHorse({horse:row.horse,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,jockey:row.jockey},history,row.date);
-   if(scored.score!=null&&scored.starts>=minStarts)samples.push({score:scored.score,finish:row.finish});
+   if(scored.score!=null&&scored.starts>=minStarts)samples.push({score:scored.score,finish:row.finish,date:row.date});
   });
   const calibration=UMAIValueModel.calibrateWinProbability(samples,200);
   if(!calibration.ready)throw new Error('勝率校正に必要な学習サンプルが不足しています（'+fmt(calibration.sampleCount)+'件）。');
@@ -233,7 +265,7 @@ $('run').addEventListener('click',async()=>{
    });
   }
   const a=summarize(topBets),b=summarize(valueBets);
-  $('overall').textContent='【検証条件】\n対象期間：'+targetYear+'年 / 対象レース '+fmt(races.size)+' / 採点評価 '+fmt(processed)+'\n最低出走数：'+minStarts+'走以上 / 校正サンプル '+fmt(calibration.sampleCount)+'頭\n追加学習CSV：'+(priorCsvRows.length?priorYears.join(', ')+'年分':'なし')+'\n学習期間：'+training.reduce((m,r)=>!m||r.date<m?r.date:m,'')+'〜'+training.reduce((m,r)=>!m||r.date>m?r.date:m,'')+'\n採点対象外（採点不能・出走数不足等）：'+fmt(noScore)+'頭\n最高スコア同点で見送り：'+fmt(topTieRaces)+'レース\nオッズ不足レース（期待値買いの対象外）：'+fmt(noOddsRaces)+'\n\n'+display('【各レースの最高スコア馬を単勝100円】',a)+'\n\n'+display('【モデルの期待値条件を満たした馬を各100円】',b)+'\n\n'+calibrationReport(calibrationDiagnosticRows)+'\\n\\n'+comparatorReport(samples,calibrationDiagnosticRows)+'\\n\\n'+bandReport('【期待値買い：スコア帯別】',valueDiagnosticRows,'score',[{label:'60〜69',min:60,max:70},{label:'70〜79',min:70,max:80},{label:'80〜89',min:80,max:90},{label:'90〜100',min:90,max:101}])+'\n\n'+bandReport('【期待値買い：最終オッズ帯別】',valueDiagnosticRows,'odds',[{label:'5〜9.9倍',min:5,max:10},{label:'10〜19.9倍',min:10,max:20},{label:'20〜49.9倍',min:20,max:50},{label:'50倍以上',min:50,max:Infinity}])+'\n\n'+bandReport('【期待値買い：期待払戻倍率別】',valueDiagnosticRows,'expectedReturn',[{label:'1.10〜1.49倍',min:1.1,max:1.5},{label:'1.50〜1.99倍',min:1.5,max:2},{label:'2.00〜2.99倍',min:2,max:3},{label:'3.00倍以上',min:3,max:Infinity}])+'\n\n※各帯は期待値条件を満たして実際に買い対象となった馬だけを集計。少数件の帯は参考値。最終オッズを用いた参考値。購入時点のオッズでの再現ではありません。';
+  $('overall').textContent='【検証条件】\n対象期間：'+targetYear+'年 / 対象レース '+fmt(races.size)+' / 採点評価 '+fmt(processed)+'\n最低出走数：'+minStarts+'走以上 / 校正サンプル '+fmt(calibration.sampleCount)+'頭\n追加学習CSV：'+(priorCsvRows.length?priorYears.join(', ')+'年分':'なし')+'\n学習期間：'+training.reduce((m,r)=>!m||r.date<m?r.date:m,'')+'〜'+training.reduce((m,r)=>!m||r.date>m?r.date:m,'')+'\n採点対象外（採点不能・出走数不足等）：'+fmt(noScore)+'頭\n最高スコア同点で見送り：'+fmt(topTieRaces)+'レース\nオッズ不足レース（期待値買いの対象外）：'+fmt(noOddsRaces)+'\n\n'+display('【各レースの最高スコア馬を単勝100円】',a)+'\n\n'+display('【モデルの期待値条件を満たした馬を各100円】',b)+'\n\n'+calibrationReport(calibrationDiagnosticRows)+'\\n\\n'+comparatorReport(samples,calibrationDiagnosticRows)+'\\n\\n'+periodDriftReport(samples,calibrationDiagnosticRows)+'\\n\\n'+bandReport('【期待値買い：スコア帯別】',valueDiagnosticRows,'score',[{label:'60〜69',min:60,max:70},{label:'70〜79',min:70,max:80},{label:'80〜89',min:80,max:90},{label:'90〜100',min:90,max:101}])+'\n\n'+bandReport('【期待値買い：最終オッズ帯別】',valueDiagnosticRows,'odds',[{label:'5〜9.9倍',min:5,max:10},{label:'10〜19.9倍',min:10,max:20},{label:'20〜49.9倍',min:20,max:50},{label:'50倍以上',min:50,max:Infinity}])+'\n\n'+bandReport('【期待値買い：期待払戻倍率別】',valueDiagnosticRows,'expectedReturn',[{label:'1.10〜1.49倍',min:1.1,max:1.5},{label:'1.50〜1.99倍',min:1.5,max:2},{label:'2.00〜2.99倍',min:2,max:3},{label:'3.00倍以上',min:3,max:Infinity}])+'\n\n※各帯は期待値条件を満たして実際に買い対象となった馬だけを集計。少数件の帯は参考値。最終オッズを用いた参考値。購入時点のオッズでの再現ではありません。';
   $('status').textContent='完了：本番設定・保存データは変更していません。';
  }catch(e){$('overall').textContent='検証できませんでした：'+e.message;$('status').textContent='エラー';}
  finally{button.disabled=false;}
