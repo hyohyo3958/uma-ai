@@ -391,7 +391,7 @@
         const exactPrior = (history.byHorse.get(row.horse) || []).some(past => past.date < row.date);
         if (exactPrior) return;
         result.noHistory++;
-        const ageMatch = text(row.sexAge).match(/(\\d{1,2})/);
+        const ageMatch = text(row.sexAge).match(/(\d{1,2})/);
         const age = ageMatch ? Number(ageMatch[1]) : null;
         if (age === 2) result.age2++;
         else if (age === 3) result.age3++;
