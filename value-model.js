@@ -407,6 +407,8 @@
       let evaluatedRaces = 0, top1Hits = 0, top3Hits = 0;
       let scoredHorses = 0, skippedHorses = 0, brierSum = 0, brierN = 0;
       let randomTop1 = 0, randomTop3 = 0;
+      const exclusions = { noHistory: 0, oneOrTwoStarts: 0, noScoreWithEnoughStarts: 0, scoredButBelowMinimumStarts: 0 };
+      const componentMissing = { recent: 0, course: 0, surface: 0, distance: 0, going: 0, jockey: 0, experience: 0 };
       for (const group of races.values()) {
         const scored = group.map(row => Object.assign({}, row, scoreHorse({
           horse: row.horse, venue: row.venue, surface: row.surface,
@@ -415,6 +417,18 @@
         const usable = scored.filter(h => h.score != null && h.starts >= opts.minStarts);
         scoredHorses += usable.length;
         skippedHorses += scored.length - usable.length;
+        scored.forEach(h => {
+          if (h.starts === 0) exclusions.noHistory++;
+          else if (h.starts < opts.minStarts) {
+            exclusions.oneOrTwoStarts++;
+            if (h.score != null) exclusions.scoredButBelowMinimumStarts++;
+          } else if (h.score == null) {
+            exclusions.noScoreWithEnoughStarts++;
+            Object.keys(componentMissing).forEach(key => {
+              if (h.components && h.components[key] == null) componentMissing[key]++;
+            });
+          }
+        });
         if (usable.length < 2) continue;
         evaluatedRaces++;
         randomTop1 += 1 / usable.length;
@@ -439,6 +453,7 @@
         testEnd: testRows.reduce((m, r) => !m || r.date > m ? r.date : m, ""),
         trainRaces: new Set(trainRows.map(raceKey)).size,
         testRaces: races.size, evaluatedRaces, scoredHorses, skippedHorses,
+        exclusionDiagnostics: exclusions, missingComponentsWhenUnscored: componentMissing,
         calibrationSamples: calibration.sampleCount,
         top1Hits, top3Hits, top1Rate: evaluatedRaces ? top1Hits / evaluatedRaces : null,
         top3Rate: evaluatedRaces ? top3Hits / evaluatedRaces : null,
