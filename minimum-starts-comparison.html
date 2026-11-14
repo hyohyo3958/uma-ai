@@ -48,6 +48,11 @@ table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}th,td{p
 <p class="note">「過去1走だけ」は、対象レースより前の出走履歴がちょうど1件ある馬です。各レース内でその馬たちだけをスコア順に並べ、2頭以上いるレースで順位精度を集計します。年齢別も同じ方法です。採点式・本番条件・保存データは変更しません。</p>
 </div>
 <div class="card">
+<h2>年度・年齢別の効果と順位変動</h2>
+<div id="impact" class="result">まだ実行していません。</div>
+<p class="note">年度別は同じ共通検証レースを2024年・2025年に分けて集計します。年齢別は実際の勝ち馬の年齢ごとに、全出走馬内での順位精度を比較します。順位変動は、最低2走の候補馬が最低1走にしたときに何位動いたか、上位3頭から外れたかを集計します。同点は同点圏として扱います。</p>
+</div>
+<div class="card">
 <h2>確認事項</h2>
 <div id="notes" class="result">このページは読み取り専用です。採点式・配点・最低3走の本番条件・保存データ・クラウドバックアップは変更しません。</div>
 </div>
@@ -69,7 +74,7 @@ const ageOf=row=>{
 const fmt=n=>Number(n||0).toLocaleString('ja-JP');
 $('run').addEventListener('click',async()=>{
  const button=$('run');button.disabled=true;
- $('overall').textContent='計算中…';$('ages').textContent='計算中…';$('notes').textContent='保存済みデータを読み込み、3条件共通の検証レースを抽出しています。';
+ $('overall').textContent='計算中…';$('ages').textContent='計算中…';$('impact').textContent='計算中…';$('notes').textContent='保存済みデータを読み込み、3条件共通の検証レースを抽出しています。';
  try{
   if(!window.UMAIValueModel||!window.UMAIHistoryStore)throw new Error('分析エンジンまたは履歴保存機能を読み込めません。UMA AIのメイン画面から開き直してください。');
   const rows=await UMAIHistoryStore.getRows();
@@ -192,6 +197,74 @@ $('run').addEventListener('click',async()=>{
    fullLines.push(age+'：'+fmt(group.length)+'頭／勝ち '+fmt(wins.length)+'頭／最高スコア同点圏 '+fmt(group.filter(h=>h.inTop1).length)+'頭／上位3頭同点圏 '+fmt(group.filter(h=>h.inTop3).length)+'頭');
   }
   $('oneStart').textContent=oneLines.join('\n\n')+'\n\n'+fullLines.join('\n');
+  // Year, winner-age, and displacement diagnostics on the same common race set.
+  const raceMetric=(groups,minStarts)=>{
+   let races=0,top1=0,top3=0;
+   groups.forEach(all=>{
+    const eligible=all.filter(h=>h.starts>=minStarts);
+    if(eligible.length<2)return;
+    races++;
+    const sorted=eligible.slice().sort((a,b)=>b.score-a.score);
+    const winners=eligible.filter(h=>h.finish===1);
+    const third=sorted[Math.min(2,sorted.length-1)].score;
+    if(winners.some(h=>h.score===sorted[0].score))top1++;
+    if(winners.some(h=>h.score>=third))top3++;
+   });
+   return {races,top1,top3,top1Rate:races?top1/races:null,top3Rate:races?top3/races:null};
+  };
+  const impactLines=[];
+  impactLines.push('【年度別：全出走馬内の順位精度】');
+  for(const year of ['2024','2025']){
+   const groups=Array.from(fullFieldRaces.values()).filter(g=>g[0]&&g[0].date.slice(0,4)===year);
+   const a=raceMetric(groups,2),b=raceMetric(groups,1);
+   impactLines.push(year+'年（最低2走 '+fmt(a.races)+'レース／最低1走 '+fmt(b.races)+'レース）');
+   impactLines.push('  最低2走：最高スコア '+pct(a.top1Rate)+'／上位3頭 '+pct(a.top3Rate));
+   impactLines.push('  最低1走：最高スコア '+pct(b.top1Rate)+'／上位3頭 '+pct(b.top3Rate));
+   impactLines.push('  改善幅：最高スコア '+(a.races&&b.races?((b.top1Rate-a.top1Rate)*100).toFixed(1)+'pt':'—')+'／上位3頭 '+(a.races&&b.races?((b.top3Rate-a.top3Rate)*100).toFixed(1)+'pt':'—'));
+  }
+  impactLines.push('','【勝ち馬の年齢別：全出走馬内での順位精度】');
+  for(const age of ['2歳','3歳','4歳以上','年齢不明']){
+   const groups=Array.from(fullFieldRaces.values()).filter(g=>g.some(h=>h.finish===1&&h.age===age));
+   const a=raceMetric(groups,2),b=raceMetric(groups,1);
+   impactLines.push(age+'勝ち馬（対象 '+fmt(groups.length)+'レース）');
+   impactLines.push('  最低2走：最高スコア '+pct(a.top1Rate)+'／上位3頭 '+pct(a.top3Rate)+'（'+fmt(a.races)+'レース）');
+   impactLines.push('  最低1走：最高スコア '+pct(b.top1Rate)+'／上位3頭 '+pct(b.top3Rate)+'（'+fmt(b.races)+'レース）');
+   impactLines.push('  改善幅：最高スコア '+(a.races&&b.races?((b.top1Rate-a.top1Rate)*100).toFixed(1)+'pt':'—')+'／上位3頭 '+(a.races&&b.races?((b.top3Rate-a.top3Rate)*100).toFixed(1)+'pt':'—'));
+  }
+  impactLines.push('','【2走以上の馬への順位影響】');
+  let horseN=0,rankShiftSum=0,rankWorse=0,rankBetter=0,rankSame=0,oldTop3=0,oldTop3Out=0,newTop3In=0,oneStartTop3=0,raceWithOneStartTop3=0;
+  fullFieldRaces.forEach(all=>{
+   const oldGroup=all.filter(h=>h.starts>=2);
+   const newGroup=all.filter(h=>h.starts>=1);
+   if(oldGroup.length<2||newGroup.length<2)return;
+   const oldSorted=oldGroup.slice().sort((a,b)=>b.score-a.score);
+   const newSorted=newGroup.slice().sort((a,b)=>b.score-a.score);
+   const oldCut=oldSorted[Math.min(2,oldSorted.length-1)].score;
+   const newCut=newSorted[Math.min(2,newSorted.length-1)].score;
+   let oneEntered=false;
+   oldGroup.forEach(h=>{
+    const oldRank=1+oldGroup.filter(x=>x.score>h.score).length;
+    const newRank=1+newGroup.filter(x=>x.score>h.score).length;
+    const delta=newRank-oldRank;
+    horseN++;rankShiftSum+=delta;
+    if(delta>0)rankWorse++;else if(delta<0)rankBetter++;else rankSame++;
+    const wasTop3=h.score>=oldCut,nowTop3=h.score>=newCut;
+    if(wasTop3){oldTop3++;if(!nowTop3)oldTop3Out++;}
+    if(!wasTop3&&nowTop3)newTop3In++;
+   });
+   const addedTop3=all.filter(h=>h.starts===1&&h.score>=newCut);
+   oneStartTop3+=addedTop3.length;
+   if(addedTop3.length)oneEntered=true;
+   if(oneEntered)raceWithOneStartTop3++;
+  });
+  impactLines.push('比較対象の2走以上馬 '+fmt(horseN)+'頭');
+  impactLines.push('  平均順位変動（最低1走−最低2走）：'+(horseN?(rankShiftSum/horseN).toFixed(2)+'位':'—')+'（プラスは順位低下）');
+  impactLines.push('  順位低下 '+fmt(rankWorse)+'頭／上昇 '+fmt(rankBetter)+'頭／変化なし '+fmt(rankSame)+'頭');
+  impactLines.push('  最低2走時の上位3頭同点圏 '+fmt(oldTop3)+'頭のうち、最低1走で圏外へ '+fmt(oldTop3Out)+'頭');
+  impactLines.push('  最低1走で新たに上位3頭同点圏へ入った2走以上馬 '+fmt(newTop3In)+'頭');
+  impactLines.push('  最低1走で上位3頭同点圏に入った1走馬 '+fmt(oneStartTop3)+'頭／該当レース '+fmt(raceWithOneStartTop3)+'レース');
+  $('impact').textContent=impactLines.join('\n');
+
 
 
   const years=Array.from(new Set(history.rows.filter(r=>r.date).map(r=>r.date.slice(0,4)))).sort();
