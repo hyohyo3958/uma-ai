@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#101827">
-<title>UMA AI - 単勝ROI検証（2024）</title>
+<title>UMA AI - 単勝ROI検証</title>
 <style>
 :root{color-scheme:dark;--bg:#101827;--panel:#1b2638;--muted:#a9b5c7;--line:#344258;--gold:#e4b65e;--green:#65c99a}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f5f7fb;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
@@ -19,11 +19,11 @@ label{font-size:13px;color:var(--muted)}.result{white-space:pre-wrap;line-height
 <body>
 <nav style="max-width:900px;margin:16px auto;padding:0 16px"><a class="back" href="./">← UMA AIに戻る</a></nav>
 <main>
-<h1>2024年・単勝ROI検証</h1>
-<p>2024年の確定成績CSVと、ブラウザに保存済みの過去成績を使う検証専用ページです。本番の採点式・配点・最低出走数・履歴データは変更しません。</p>
+<h1>単勝ROI検証</h1>
+<p>選択したCSVの日付から対象年を自動判定し、その前年までの履歴だけで校正する検証専用ページです。本番の採点式・配点・最低出走数・履歴データは変更しません。</p>
 <div class="card">
 <h2>検証データ</h2>
-<label for="csv">2024年の全成績CSV（all_results.csv）</label>
+<label for="csv">検証したい1年分の全成績CSV（all_results.csv）</label>
 <input id="csv" type="file" accept=".csv,text/csv">
 <div id="fileInfo" class="note">CSV未選択</div>
 <label for="minStarts">最低出走数</label>
@@ -37,12 +37,12 @@ label{font-size:13px;color:var(--muted)}.result{white-space:pre-wrap;line-height
 </div>
 <div class="card">
 <h2>判定上の注意</h2>
-<div class="result">・勝率校正は2024年より前の履歴だけで行います（2021〜2023年が必要）。各馬の採点も対象レース日より前の履歴だけを参照します。
+<div class="result">・勝率校正はCSVから判定した対象年より前の履歴だけで行います。各馬の採点も対象レース日より前の履歴だけを参照します。
 ・オッズはCSVに記録された最終オッズです。実際の購入時点のオッズではないため、参考検証です。
 ・単勝100円を基準に集計します。同点最高スコアは恣意的な馬選びを避けるため、最高スコア買いでは見送ります。
 ・期待値買いは既存モデルの条件（スコア60以上、カバー率60以上、最終オッズ5倍以上、推定勝率と市場確率の差10ポイント以上、期待払戻倍率1.10以上）を使います。
 ・的中馬の公式払戻が欠けている場合、その購入はROI計算から除外し、件数を別記します。取消・除外などオッズがない馬を含むレースは期待値判定の対象外です。
-・これは過去データ上の検証であり、将来の利益を保証しません。2024年で条件を調整した場合、同じ2024年の回収率を成績として扱わず、2025年で独立検証します。</div>
+・これは過去データ上の検証であり、将来の利益を保証しません。検証対象年で条件を調整した場合、その年の回収率を独立した成績として扱わないでください。</div>
 </div>
 </main>
 <script src="./value-model.js"></script>
@@ -55,6 +55,7 @@ const pct=n=>Number.isFinite(n)?(n*100).toFixed(1)+'%':'—';
 const number=v=>{if(v==null||String(v).trim()==='')return null;const n=Number(String(v).replace(/[,円]/g,''));return Number.isFinite(n)?n:null;};
 const key=r=>[r.date,r.venue,r.raceNo].join('|');
 let csvRows=null;
+let targetYear=null;
 $('csv').addEventListener('change',async()=>{
  const f=$('csv').files[0];csvRows=null;
  if(!f){$('fileInfo').textContent='CSV未選択';return;}
@@ -62,10 +63,13 @@ $('csv').addEventListener('change',async()=>{
   const raw=await f.text();const parsed=UMAIHistoryStore.parseCSV(raw);
   const normalized=parsed.map(r=>UMAIValueModel.normalizeResult(r));
   const dates=normalized.map(r=>r.date).filter(Boolean).sort();
+  const years=[...new Set(dates.map(d=>d.slice(0,4)))];
+  if(years.length!==1)throw new Error('CSVは1年分にしてください（検出した年：'+years.join(', ')+'）。');
+  targetYear=Number(years[0]);
   const races=new Set(normalized.filter(r=>r.date&&r.venue&&r.raceNo!=null).map(key));
   if(!parsed.length||!dates.length)throw new Error('日付など必要な列が見つかりません。');
   csvRows=parsed;
-  $('fileInfo').textContent='読み込みOK：'+fmt(parsed.length)+'行 / '+fmt(races.size)+'レース / '+dates[0]+'〜'+dates[dates.length-1];
+  $('fileInfo').textContent='読み込みOK：対象 '+targetYear+'年 / '+fmt(parsed.length)+'行 / '+fmt(races.size)+'レース / '+dates[0]+'〜'+dates[dates.length-1];
  }catch(e){$('fileInfo').textContent='CSVを読み込めません：'+e.message;}
 });
 function summarize(bets){
@@ -80,14 +84,16 @@ function display(label,s){
 $('run').addEventListener('click',async()=>{
  const button=$('run');button.disabled=true;$('status').textContent='計算中…';$('overall').textContent='履歴データとCSVを照合しています。';
  try{
-  if(!csvRows)throw new Error('先に2024年の全成績CSVを選択してください。');
+  if(!csvRows||!targetYear)throw new Error('先に検証したい1年分の全成績CSVを選択してください。');
   if(!window.UMAIValueModel||!window.UMAIHistoryStore)throw new Error('分析エンジンを読み込めません。');
   const rawHistory=await UMAIHistoryStore.getRows();
   if(!rawHistory.length)throw new Error('このブラウザに過去成績がありません。UMA AI本体で履歴を確認してください。');
   const history=UMAIValueModel.prepareHistory(rawHistory);
   const minStarts=Number($('minStarts').value);
-  const training=history.rows.filter(r=>r.date<'2024-01-01'&&r.finish!=null&&!/競走除外|出走取消|取消/.test(r.status||''));
-  if(!training.length)throw new Error('2024年より前の学習用履歴がありません。2021〜2023年の履歴を同じブラウザに用意してください。');
+  const yearStart=String(targetYear)+'-01-01';
+  const nextYear=String(targetYear+1)+'-01-01';
+  const training=history.rows.filter(r=>r.date<yearStart&&r.finish!=null&&!/競走除外|出走取消|取消/.test(r.status||''));
+  if(!training.length)throw new Error(targetYear+'年より前の学習用履歴がありません。対象年より前の成績を同じブラウザに用意してください。');
   const samples=[];
   training.forEach(row=>{
    const scored=UMAIValueModel.scoreHorse({horse:row.horse,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,jockey:row.jockey},history,row.date);
@@ -98,7 +104,7 @@ $('run').addEventListener('click',async()=>{
   const entrants=csvRows.map(raw=>{
    const r=UMAIValueModel.normalizeResult(raw);
    return Object.assign({},r,{odds:number(raw['単勝オッズ']),payout:number(raw['単勝払戻']),popularity:number(raw['人気'])});
-  }).filter(r=>r.date&&r.date>='2024-01-01'&&r.date<'2025-01-01'&&r.venue&&r.raceNo!=null&&r.horse);
+  }).filter(r=>r.date&&r.date>=yearStart&&r.date<nextYear&&r.venue&&r.raceNo!=null&&r.horse);
   const races=new Map();
   entrants.forEach(r=>{const k=key(r);if(!races.has(k))races.set(k,[]);races.get(k).push(r);});
   const topBets=[],valueBets=[];
