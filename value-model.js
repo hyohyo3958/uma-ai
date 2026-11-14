@@ -416,6 +416,38 @@
     }).filter(r => r.noHistory > 0);
   }
 
+  // Diagnose horses with one or two prior starts; this is read-only and does not alter scoring.
+  function diagnoseLowHistoryStarts(history) {
+    const rows = (history.rows || []).filter(r => r.date && r.finish != null && !isNonRunner(r));
+    const years = Array.from(new Set(rows.map(r => r.date.slice(0, 4)))).sort();
+    const ageBucket = age => age === 2 ? "age2" : age === 3 ? "age3" : age != null && age >= 4 ? "age4Plus" : "ageUnknown";
+    return years.map(year => {
+      const result = {
+        year, oneStart: 0, twoStarts: 0, total: 0,
+        age2: 0, age3: 0, age4Plus: 0, ageUnknown: 0,
+        oneStartAge: { age2: 0, age3: 0, age4Plus: 0, ageUnknown: 0 },
+        twoStartAge: { age2: 0, age3: 0, age4Plus: 0, ageUnknown: 0 }
+      };
+      rows.filter(r => r.date.slice(0, 4) === year).forEach(row => {
+        const past = (history.byHorse.get(row.horse) || []).filter(p => p.date < row.date);
+        if (past.length !== 1 && past.length !== 2) return;
+        const match = text(row.sexAge).match(/(\d{1,2})/);
+        const age = match ? Number(match[1]) : null;
+        const bucket = ageBucket(age);
+        result.total++;
+        if (past.length === 1) {
+          result.oneStart++;
+          result.oneStartAge[bucket]++;
+        } else {
+          result.twoStarts++;
+          result.twoStartAge[bucket]++;
+        }
+        result[bucket]++;
+      });
+      return result;
+    }).filter(r => r.total > 0);
+  }
+
   // Year-by-year walk-forward report: each test year is calibrated only with
   // finished races strictly before that calendar year.
   function runYearlyBacktests(history, options) {
@@ -520,6 +552,7 @@
     runChronologicalBacktest,
     runYearlyBacktests,
     diagnoseNoHistoryNames,
+    diagnoseLowHistoryStarts,
     evaluateRaceValue
   };
 })(typeof window !== "undefined" ? window : globalThis);
