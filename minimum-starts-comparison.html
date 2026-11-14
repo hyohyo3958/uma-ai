@@ -142,6 +142,57 @@ $('run').addEventListener('click',async()=>{
   oneLines.push('年齢別（全期間）');
   for(const age of ['2歳','3歳','4歳以上','年齢不明']) oneLines.push(showSummary(age,oneStartRows.filter(r=>r.age===age)));
   $('oneStart').textContent=oneLines.join('\n\n');
+  // Compare minimum-2 vs minimum-1 in the full field on identical common races.
+  const fullFieldRaces=new Map();
+  validRows.forEach(row=>{
+   const scored=UMAIValueModel.scoreHorse({horse:row.horse,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,jockey:row.jockey},history,row.date);
+   if(scored.score==null||scored.starts<1)return;
+   const key=[row.date,row.venue,row.raceNo].join('|');
+   if(!fullFieldRaces.has(key))fullFieldRaces.set(key,[]);
+   fullFieldRaces.get(key).push({...row,score:scored.score,starts:scored.starts,age:ageOf(row)});
+  });
+  const compareField=(minStarts)=>{
+   let racesN=0,top1=0,top3=0,random1=0,random3=0,horseN=0;
+   fullFieldRaces.forEach(all=>{
+    const group=all.filter(h=>h.starts>=minStarts);horseN+=group.length;
+    if(group.length<2)return;
+    racesN++;random1+=1/group.length;random3+=Math.min(3,group.length)/group.length;
+    const sorted=group.slice().sort((a,b)=>b.score-a.score);
+    const firstScore=sorted[0].score,thirdScore=sorted[Math.min(2,sorted.length-1)].score;
+    if(sorted.some(h=>h.score===firstScore&&h.finish===1))top1++;
+    if(sorted.some(h=>h.score>=thirdScore&&h.finish===1))top3++;
+   });
+   return {racesN,horseN,top1,top3,top1Rate:racesN?top1/racesN:null,top3Rate:racesN?top3/racesN:null,random1:racesN?random1/racesN:null,random3:racesN?random3/racesN:null};
+  };
+  const m2=compareField(2),m1=compareField(1);
+  const fullLines=[
+   '同じ共通検証レースで、最低2走と最低1走を比較（全出走馬内）',
+   '最低2走：採点 '+fmt(m2.horseN)+'頭／評価 '+fmt(m2.racesN)+'レース',
+   '  最高スコア馬の勝率 '+pct(m2.top1Rate)+'／上位3頭以内 '+pct(m2.top3Rate),
+   '最低1走：採点 '+fmt(m1.horseN)+'頭／評価 '+fmt(m1.racesN)+'レース',
+   '  最高スコア馬の勝率 '+pct(m1.top1Rate)+'／上位3頭以内 '+pct(m1.top3Rate),
+   '差（最低1走−最低2走）：最高スコア '+(m1.top1Rate!=null&&m2.top1Rate!=null?((m1.top1Rate-m2.top1Rate)*100).toFixed(1)+'ポイント':'—')+
+    '／上位3頭 '+(m1.top3Rate!=null&&m2.top3Rate!=null?((m1.top3Rate-m2.top3Rate)*100).toFixed(1)+'ポイント':'—')
+  ];
+  const oneInField=Array.from(fullFieldRaces.values()).flatMap(group=>group.filter(h=>h.starts===1).map(h=>{
+   const sorted=group.slice().sort((a,b)=>b.score-a.score);
+   const rank=1+sorted.filter(x=>x.score>h.score).length;
+   const thirdScore=sorted[Math.min(2,sorted.length-1)].score;
+   return {...h,rank,fieldSize:group.length,inTop1:h.score===sorted[0].score,inTop3:h.score>=thirdScore};
+  }));
+  const oneWinners=oneInField.filter(h=>h.finish===1);
+  fullLines.push('','過去1走馬の全出走馬内での位置（最低1走で採点した全馬と比較）');
+  fullLines.push('1走馬 '+fmt(oneInField.length)+'頭／実際の勝ち馬 '+fmt(oneWinners.length)+'頭');
+  fullLines.push('1走馬のうち最高スコア同点圏 '+fmt(oneInField.filter(h=>h.inTop1).length)+'頭／上位3頭同点圏 '+fmt(oneInField.filter(h=>h.inTop3).length)+'頭');
+  fullLines.push('1走馬の勝ち馬のうち最高スコア同点圏 '+fmt(oneWinners.filter(h=>h.inTop1).length)+'頭／上位3頭同点圏 '+fmt(oneWinners.filter(h=>h.inTop3).length)+'頭');
+  fullLines.push('1走馬の勝ち馬の全体順位：'+(oneWinners.length? '平均 '+(oneWinners.reduce((s,h)=>s+h.rank,0)/oneWinners.length).toFixed(1)+'位':'該当なし'));
+  fullLines.push('年齢別（1走馬を全出走馬内で評価）');
+  for(const age of ['2歳','3歳','4歳以上','年齢不明']){
+   const group=oneInField.filter(h=>h.age===age),wins=group.filter(h=>h.finish===1);
+   fullLines.push(age+'：'+fmt(group.length)+'頭／勝ち '+fmt(wins.length)+'頭／最高スコア同点圏 '+fmt(group.filter(h=>h.inTop1).length)+'頭／上位3頭同点圏 '+fmt(group.filter(h=>h.inTop3).length)+'頭');
+  }
+  $('oneStart').textContent=oneLines.join('\n\n')+'\n\n'+fullLines.join('\n');
+
 
   const years=Array.from(new Set(history.rows.filter(r=>r.date).map(r=>r.date.slice(0,4)))).sort();
   $('notes').textContent='読み込んだデータ：'+(years.length?years[0]+'年〜'+years[years.length-1]+'年':'期間不明')+'（'+fmt(history.rows.length)+'行）\n'+
