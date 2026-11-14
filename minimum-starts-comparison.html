@@ -232,7 +232,7 @@ $('run').addEventListener('click',async()=>{
    impactLines.push('  改善幅：最高スコア '+(a.races&&b.races?((b.top1Rate-a.top1Rate)*100).toFixed(1)+'pt':'—')+'／上位3頭 '+(a.races&&b.races?((b.top3Rate-a.top3Rate)*100).toFixed(1)+'pt':'—'));
   }
   impactLines.push('','【2走以上の馬への順位影響】');
-  let horseN=0,rankShiftSum=0,rankWorse=0,rankBetter=0,rankSame=0,oldTop3=0,oldTop3Out=0,newTop3In=0,oneStartTop3=0,raceWithOneStartTop3=0;
+  let horseN=0,rankShiftSum=0,rankWorse=0,rankBetter=0,rankSame=0,oldTop3=0,oldTop3Out=0,newTop3In=0,oneStartTop3=0,raceWithOneStartTop3=0,displacedWinners=0,addedOneStartWinners=0;
   fullFieldRaces.forEach(all=>{
    const oldGroup=all.filter(h=>h.starts>=2);
    const newGroup=all.filter(h=>h.starts>=1);
@@ -249,11 +249,12 @@ $('run').addEventListener('click',async()=>{
     horseN++;rankShiftSum+=delta;
     if(delta>0)rankWorse++;else if(delta<0)rankBetter++;else rankSame++;
     const wasTop3=h.score>=oldCut,nowTop3=h.score>=newCut;
-    if(wasTop3){oldTop3++;if(!nowTop3)oldTop3Out++;}
+    if(wasTop3){oldTop3++;if(!nowTop3){oldTop3Out++;if(h.finish===1)displacedWinners++;}}
     if(!wasTop3&&nowTop3)newTop3In++;
    });
    const addedTop3=all.filter(h=>h.starts===1&&h.score>=newCut);
    oneStartTop3+=addedTop3.length;
+   addedOneStartWinners+=addedTop3.filter(h=>h.finish===1).length;
    if(addedTop3.length)oneEntered=true;
    if(oneEntered)raceWithOneStartTop3++;
   });
@@ -263,6 +264,8 @@ $('run').addEventListener('click',async()=>{
   impactLines.push('  最低2走時の上位3頭同点圏 '+fmt(oldTop3)+'頭のうち、最低1走で圏外へ '+fmt(oldTop3Out)+'頭');
   impactLines.push('  最低1走で新たに上位3頭同点圏へ入った2走以上馬 '+fmt(newTop3In)+'頭');
   impactLines.push('  最低1走で上位3頭同点圏に入った1走馬 '+fmt(oneStartTop3)+'頭／該当レース '+fmt(raceWithOneStartTop3)+'レース');
+  impactLines.push('  最低2走の上位3頭から圏外になった実際の勝ち馬 '+fmt(displacedWinners)+'頭');
+  impactLines.push('  最低1走で上位3頭に新規追加された1走馬の実際の勝ち馬 '+fmt(addedOneStartWinners)+'頭');
   $('impact').textContent=impactLines.join('\n');
 
 
