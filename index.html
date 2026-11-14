@@ -115,6 +115,8 @@ footer{font-size:12px;color:var(--muted);line-height:1.6;margin-top:18px}
 <div id="yearlyBacktestResult" class="result muted" style="margin-top:12px">各年の成績を、前年までのデータだけで校正して比較します。</div>
 <button id="runNameHistoryDiagnostic" style="width:100%;margin-top:8px">履歴なし馬の名前照合を診断</button>
 <div id="nameHistoryDiagnosticResult" class="result muted" style="margin-top:12px">既存の名前照合は変更せず、表記ゆれで過去履歴が見つかる可能性だけを調べます。</div>
+<button id="runShortHistoryDiagnostic" style="width:100%;margin-top:8px">過去1〜2走の馬を年齢別に診断</button>
+<div id="shortHistoryDiagnosticResult" class="result muted" style="margin-top:12px">過去1〜2走の馬について、年齢と現在の採点可否を確認します。採点条件や配点は変更しません。</div>
 <p class="stat">採点結果CSVにレース後の着順と単勝払戻（100円あたり）を追記して読み込むと、上位評価馬の成績を検証します。</p>
 <label for="backtestFile">着順を追記したCSV</label><input id="backtestFile" type="file" accept=".csv,text/csv">
 <button class="primary" id="runBacktest">検証・回収率を計算</button>
@@ -308,6 +310,22 @@ document.getElementById('runNameHistoryDiagnostic').addEventListener('click',asy
   const reports=UMAIValueModel.diagnoseNoHistoryNames(history);
   const lines=reports.map(r=>'■ '+r.year+'年\\n履歴なし：'+r.noHistory.toLocaleString('ja-JP')+'頭\\n表記を正規化すると過去履歴あり：'+r.normalizedPriorMatch.toLocaleString('ja-JP')+'頭\\n同じ正規化名はあるが過去履歴なし：'+r.onlyLaterHistory.toLocaleString('ja-JP')+'頭\\n取り込みデータ内に一致名なし：'+r.noNameMatchInImportedData.toLocaleString('ja-JP')+'頭\\n履歴なし馬の年齢：2歳 '+r.age2.toLocaleString('ja-JP')+'頭／3歳 '+r.age3.toLocaleString('ja-JP')+'頭／4歳以上 '+r.age4Plus.toLocaleString('ja-JP')+'頭／不明 '+r.ageUnknown.toLocaleString('ja-JP')+'頭'+(r.examples.length?'\\n表記違いの例：\\n'+r.examples.map(x=>'「'+x.entrant+'」⇔過去「'+x.priorName+'」').join('\\n'):''));
   out.textContent='【履歴なし馬・名前照合診断】\\n'+(lines.join('\\n\\n')||'診断対象がありません。')+'\\n\\n※全角半角・空白を正規化した診断のみです。既存の完全一致ルール、採点結果、保存データは変更していません。「正規化すると過去履歴あり」は表記ゆれ候補であり、同一馬と断定したものではありません。';
+ }catch(error){out.textContent='診断に失敗しました：'+error.message;}
+ finally{button.disabled=false;}
+});
+
+document.getElementById('runShortHistoryDiagnostic').addEventListener('click',async()=>{
+ const out=document.getElementById('shortHistoryDiagnosticResult');
+ const button=document.getElementById('runShortHistoryDiagnostic');
+ button.disabled=true;
+ out.textContent='過去1〜2走の馬を年齢別に集計しています…';
+ try{
+  const rows=await UMAIHistoryStore.getRows();
+  if(!rows.length)throw new Error('過去成績が保存されていません。');
+  const history=UMAIValueModel.prepareHistory(rows);
+  const reports=UMAIValueModel.diagnoseShortHistoryHorses(history);
+  const lines=reports.map(r=>'■ '+r.year+'年\\n過去1走：'+r.oneStart.toLocaleString('ja-JP')+'頭分（2歳 '+r.age.oneStart.age2+'／3歳 '+r.age.oneStart.age3+'／4歳以上 '+r.age.oneStart.age4Plus+'／年齢不明 '+r.age.oneStart.unknown+'）\\n過去2走：'+r.twoStarts.toLocaleString('ja-JP')+'頭分（2歳 '+r.age.twoStarts.age2+'／3歳 '+r.age.twoStarts.age3+'／4歳以上 '+r.age.twoStarts.age4Plus+'／年齢不明 '+r.age.twoStarts.unknown+'）\\n現在の採点式でスコア算出可能：'+r.scoreAvailable.toLocaleString('ja-JP')+'頭分／算出不可：'+r.scoreUnavailable.toLocaleString('ja-JP')+'頭分');
+  out.textContent='【過去1〜2走の馬・年齢別診断】\\n'+(lines.join('\\n\\n')||'診断対象がありません。')+'\\n\\n※同じ馬が複数レースに出走した場合は、出走ごとに1件として数えています。スコア算出可能でも、現在の最低3走条件では予想対象に含まれません。採点式・配点・保存データは変更していません。';
  }catch(error){out.textContent='診断に失敗しました：'+error.message;}
  finally{button.disabled=false;}
 });
