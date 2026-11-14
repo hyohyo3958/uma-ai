@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101827">
+<title>UMA AI - 単勝ROI検証（2024）</title>
+<style>
+:root{color-scheme:dark;--bg:#101827;--panel:#1b2638;--muted:#a9b5c7;--line:#344258;--gold:#e4b65e;--green:#65c99a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f5f7fb;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
+main{max-width:780px;margin:auto;padding:22px 16px 48px}h1{font-size:23px;margin:0 0 8px}h2{font-size:16px;margin:0 0 12px}
+p,.note{color:var(--muted);font-size:13px;line-height:1.7}.card{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:16px;margin:14px 0}
+button{width:100%;padding:14px;border:0;border-radius:10px;background:var(--gold);color:#171717;font-weight:700;font-size:15px}button:disabled{opacity:.55}
+input,select{width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;background:#101827;color:#fff;margin:7px 0 12px}
+label{font-size:13px;color:var(--muted)}.result{white-space:pre-wrap;line-height:1.7;font-size:13px;overflow-wrap:anywhere}
+.status{color:var(--green);font-size:13px;min-height:22px}.warn{color:#f0c879}.back{color:var(--gold);text-decoration:none;font-size:13px}
+</style>
+</head>
+<body>
+<nav style="max-width:900px;margin:16px auto;padding:0 16px"><a class="back" href="./">← UMA AIに戻る</a></nav>
+<main>
+<h1>2024年・単勝ROI検証</h1>
+<p>2024年の確定成績CSVと、ブラウザに保存済みの過去成績を使う検証専用ページです。本番の採点式・配点・最低出走数・履歴データは変更しません。</p>
+<div class="card">
+<h2>検証データ</h2>
+<label for="csv">2024年の全成績CSV（all_results.csv）</label>
+<input id="csv" type="file" accept=".csv,text/csv">
+<div id="fileInfo" class="note">CSV未選択</div>
+<label for="minStarts">最低出走数</label>
+<select id="minStarts"><option value="1">1走以上</option><option value="2">2走以上</option><option value="3" selected>3走以上（本番条件）</option></select>
+<button id="run">ROI検証を実行</button>
+<div id="status" class="status" role="status" style="margin-top:12px">待機中</div>
+</div>
+<div class="card">
+<h2>検証結果</h2>
+<div id="overall" class="result">CSVを選択して実行してください。</div>
+</div>
+<div class="card">
+<h2>判定上の注意</h2>
+<div class="result">・勝率校正は2024年より前の履歴だけで行います（2021〜2023年が必要）。各馬の採点も対象レース日より前の履歴だけを参照します。
+・オッズはCSVに記録された最終オッズです。実際の購入時点のオッズではないため、参考検証です。
+・単勝100円を基準に集計します。同点最高スコアは恣意的な馬選びを避けるため、最高スコア買いでは見送ります。
+・期待値買いは既存モデルの条件（スコア60以上、カバー率60以上、最終オッズ5倍以上、推定勝率と市場確率の差10ポイント以上、期待払戻倍率1.10以上）を使います。
+・的中馬の公式払戻が欠けている場合、その購入はROI計算から除外し、件数を別記します。取消・除外などオッズがない馬を含むレースは期待値判定の対象外です。
+・これは過去データ上の検証であり、将来の利益を保証しません。2024年で条件を調整した場合、同じ2024年の回収率を成績として扱わず、2025年で独立検証します。</div>
+</div>
+</main>
+<script src="./value-model.js"></script>
+<script src="./history-store.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const fmt=n=>Number(n||0).toLocaleString('ja-JP');
+const yen=n=>'¥'+Math.round(n||0).toLocaleString('ja-JP');
+const pct=n=>Number.isFinite(n)?(n*100).toFixed(1)+'%':'—';
+const number=v=>{if(v==null||String(v).trim()==='')return null;const n=Number(String(v).replace(/[,円]/g,''));return Number.isFinite(n)?n:null;};
+const key=r=>[r.date,r.venue,r.raceNo].join('|');
+let csvRows=null;
+$('csv').addEventListener('change',async()=>{
+ const f=$('csv').files[0];csvRows=null;
+ if(!f){$('fileInfo').textContent='CSV未選択';return;}
+ try{
+  const raw=await f.text();const parsed=UMAIHistoryStore.parseCSV(raw);
+  const normalized=parsed.map(r=>UMAIValueModel.normalizeResult(r));
+  const dates=normalized.map(r=>r.date).filter(Boolean).sort();
+  const races=new Set(normalized.filter(r=>r.date&&r.venue&&r.raceNo!=null).map(key));
+  if(!parsed.length||!dates.length)throw new Error('日付など必要な列が見つかりません。');
+  csvRows=parsed;
+  $('fileInfo').textContent='読み込みOK：'+fmt(parsed.length)+'行 / '+fmt(races.size)+'レース / '+dates[0]+'〜'+dates[dates.length-1];
+ }catch(e){$('fileInfo').textContent='CSVを読み込めません：'+e.message;}
+});
+function summarize(bets){
+ const valid=bets.filter(b=>b.valid);
+ const stake=valid.reduce((s,b)=>s+b.stake,0),returns=valid.reduce((s,b)=>s+b.return,0);
+ const hits=valid.filter(b=>b.hit).length;
+ return {bets:valid.length,excluded:bets.length-valid.length,hits,stake,returns,roi:stake?returns/stake:null,profit:returns-stake};
+}
+function display(label,s){
+ return label+'\n購入 '+fmt(s.bets)+'件（的中 '+fmt(s.hits)+'件） / 払戻欠損等で除外 '+fmt(s.excluded)+'件\n投資 '+yen(s.stake)+' / 払戻 '+yen(s.returns)+'\n回収率 '+pct(s.roi)+' / 収支 '+(s.profit>=0?'+':'')+yen(s.profit);
+}
+$('run').addEventListener('click',async()=>{
+ const button=$('run');button.disabled=true;$('status').textContent='計算中…';$('overall').textContent='履歴データとCSVを照合しています。';
+ try{
+  if(!csvRows)throw new Error('先に2024年の全成績CSVを選択してください。');
+  if(!window.UMAIValueModel||!window.UMAIHistoryStore)throw new Error('分析エンジンを読み込めません。');
+  const rawHistory=await UMAIHistoryStore.getRows();
+  if(!rawHistory.length)throw new Error('このブラウザに過去成績がありません。UMA AI本体で履歴を確認してください。');
+  const history=UMAIValueModel.prepareHistory(rawHistory);
+  const minStarts=Number($('minStarts').value);
+  const training=history.rows.filter(r=>r.date<'2024-01-01'&&r.finish!=null&&!/競走除外|出走取消|取消/.test(r.status||''));
+  if(!training.length)throw new Error('2024年より前の学習用履歴がありません。2021〜2023年の履歴を同じブラウザに用意してください。');
+  const samples=[];
+  training.forEach(row=>{
+   const scored=UMAIValueModel.scoreHorse({horse:row.horse,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,jockey:row.jockey},history,row.date);
+   if(scored.score!=null&&scored.starts>=minStarts)samples.push({score:scored.score,finish:row.finish});
+  });
+  const calibration=UMAIValueModel.calibrateWinProbability(samples,200);
+  if(!calibration.ready)throw new Error('勝率校正に必要な学習サンプルが不足しています（'+fmt(calibration.sampleCount)+'件）。');
+  const entrants=csvRows.map(raw=>{
+   const r=UMAIValueModel.normalizeResult(raw);
+   return Object.assign({},r,{odds:number(raw['単勝オッズ']),payout:number(raw['単勝払戻']),popularity:number(raw['人気'])});
+  }).filter(r=>r.date&&r.date>='2024-01-01'&&r.date<'2025-01-01'&&r.venue&&r.raceNo!=null&&r.horse);
+  const races=new Map();
+  entrants.forEach(r=>{const k=key(r);if(!races.has(k))races.set(k,[]);races.get(k).push(r);});
+  const topBets=[],valueBets=[];
+  let noScore=0,noOddsRaces=0,topTieRaces=0,processed=0;
+  for(const [raceKey,group] of races){
+   const scored=group.map(row=>{
+    const s=UMAIValueModel.scoreHorse({horse:row.horse,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,jockey:row.jockey},history,row.date);
+    return Object.assign({},row,s);
+   });
+   const eligible=scored.filter(h=>h.score!=null&&h.starts>=minStarts&&!/競走除外|出走取消|取消/.test(h.status||''));
+   noScore+=scored.length-eligible.length;
+   if(eligible.length<2)continue;
+   processed++;
+   const sorted=eligible.slice().sort((a,b)=>b.score-a.score);
+   const bestScore=sorted[0].score,top=sorted.filter(h=>h.score===bestScore);
+   if(top.length===1){
+    const h=top[0];topBets.push({stake:100,return:h.finish===1?h.payout||0:0,hit:h.finish===1,valid:!(h.finish===1&&!(h.payout>0))});
+   }else topTieRaces++;
+   const evalRows=UMAIValueModel.evaluateRaceValue(scored,calibration,{minScore:60,minCoverage:60,minStarts,minOdds:5,minEdge:0.10});
+   const candidates=evalRows.filter(h=>h.valueCandidate);
+   const hasCompleteOdds=scored.filter(h=>!/競走除外|出走取消|取消/.test(h.status||'')).length>=2&&scored.filter(h=>!/競走除外|出走取消|取消/.test(h.status||'')).every(h=>h.odds!=null&&h.odds>1);
+   if(!hasCompleteOdds)noOddsRaces++;
+   candidates.forEach(h=>valueBets.push({stake:100,return:h.finish===1?h.payout||0:0,hit:h.finish===1,valid:!(h.finish===1&&!(h.payout>0))}));
+  }
+  const a=summarize(topBets),b=summarize(valueBets);
+  $('overall').textContent='【検証条件】\n対象期間：2024年 / 対象レース '+fmt(races.size)+' / 採点評価 '+fmt(processed)+'\n最低出走数：'+minStarts+'走以上 / 校正サンプル '+fmt(calibration.sampleCount)+'頭\n学習期間：'+training.reduce((m,r)=>!m||r.date<m?r.date:m,'')+'〜'+training.reduce((m,r)=>!m||r.date>m?r.date:m,'')+'\n採点対象外（採点不能・出走数不足等）：'+fmt(noScore)+'頭\n最高スコア同点で見送り：'+fmt(topTieRaces)+'レース\nオッズ不足レース（期待値買いの対象外）：'+fmt(noOddsRaces)+'\n\n'+display('【各レースの最高スコア馬を単勝100円】',a)+'\n\n'+display('【モデルの期待値条件を満たした馬を各100円】',b)+'\n\n※最終オッズを用いた参考値。購入時点のオッズでの再現ではありません。';
+  $('status').textContent='完了：本番設定・保存データは変更していません。';
+ }catch(e){$('overall').textContent='検証できませんでした：'+e.message;$('status').textContent='エラー';}
+ finally{button.disabled=false;}
+});
+</script>
+</body>
+</html>
