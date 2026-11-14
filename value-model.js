@@ -433,7 +433,7 @@
         if (past.length !== 1 && past.length !== 2) return;
         const bucket = past.length === 1 ? "oneStart" : "twoStarts";
         report[bucket]++;
-        const ageMatch = text(row.sexAge).match(/(\\d{1,2})/);
+        const ageMatch = text(row.sexAge).match(/(\d{1,2})/);
         const age = ageMatch ? Number(ageMatch[1]) : null;
         if (age === 2) report.age[bucket].age2++;
         else if (age === 3) report.age[bucket].age3++;
