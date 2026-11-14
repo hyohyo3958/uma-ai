@@ -298,7 +298,11 @@
     const trainEnd = dates[splitIndex - 1];
     const testStart = dates[splitIndex];
     const trainRows = validRows.filter(r => r.date <= trainEnd);
-    const testRows = validRows.filter(r => r.date >= testStart);
+    const allTestRows = validRows.filter(r => r.date >= testStart);
+    const selectedRaceKeys = opts.raceKeys instanceof Set ? opts.raceKeys : null;
+    const testRows = selectedRaceKeys
+      ? allTestRows.filter(r => selectedRaceKeys.has(raceKey(r)))
+      : allTestRows;
     const samples = [];
     trainRows.forEach(row => {
       const pastScore = scoreHorse({
@@ -368,6 +372,66 @@
       randomTop1Baseline: randomChanceSum / evaluatedRaces,
       randomTop3Baseline: randomTop3ChanceSum / evaluatedRaces,
       brierScore: brierN ? brierSum / brierN : null
+    };
+  }
+
+
+  // Compare minimum-start thresholds on the exact same eligible test races.
+  // The common set includes only races with at least two scoreable entrants
+  // under every requested threshold.
+  function runMinimumStartsCommonRaceComparison(history, options) {
+    const opts = Object.assign({ trainFraction: 0.6, thresholds: [3, 2, 1], minSamples: 200 }, options || {});
+    const validRows = (history.rows || []).filter(r => r.date && r.finish != null && !isNonRunner(r));
+    const dates = Array.from(new Set(validRows.map(r => r.date))).sort();
+    if (dates.length < 10) {
+      return { ready: false, reason: "時系列検証には少なくとも10開催日分のデータが必要です。", dateCount: dates.length };
+    }
+    const splitIndex = Math.max(1, Math.min(dates.length - 1, Math.floor(dates.length * opts.trainFraction)));
+    const testStart = dates[splitIndex];
+    const testRows = validRows.filter(r => r.date >= testStart);
+    const races = new Map();
+    testRows.forEach(row => {
+      const key = raceKey(row);
+      if (!races.has(key)) races.set(key, []);
+      races.get(key).push(row);
+    });
+    const commonRaceKeys = new Set();
+    for (const [key, group] of races.entries()) {
+      const scored = group.map(row => scoreHorse({
+        horse: row.horse, venue: row.venue, surface: row.surface,
+        distance: row.distance, going: row.going, jockey: row.jockey
+      }, history, row.date));
+      const eligibleCounts = opts.thresholds.map(minStarts =>
+        scored.filter(h => h.score != null && h.starts >= minStarts).length
+      );
+      if (eligibleCounts.every(count => count >= 2)) commonRaceKeys.add(key);
+    }
+    if (!commonRaceKeys.size) {
+      return { ready: false, reason: "全条件で共通して比較できる検証レースがありません。", testStart, testEnd: dates[dates.length - 1] };
+    }
+    const reports = opts.thresholds.map(minStarts => ({
+      minStarts,
+      result: runChronologicalBacktest(history, {
+        trainFraction: opts.trainFraction,
+        minStarts,
+        minSamples: opts.minSamples,
+        raceKeys: commonRaceKeys
+      })
+    }));
+    const failed = reports.filter(report => !report.result.ready);
+    if (failed.length) {
+      return { ready: false, reason: failed.map(x => "最低" + x.minStarts + "走：" + x.result.reason).join(" / "), reports, commonRaceCount: commonRaceKeys.size };
+    }
+    return {
+      ready: true,
+      method: "common-race-min-starts-comparison",
+      commonRaceCount: commonRaceKeys.size,
+      commonRaceKeys,
+      reports,
+      trainStart: reports[0].result.trainStart,
+      trainEnd: reports[0].result.trainEnd,
+      testStart: reports[0].result.testStart,
+      testEnd: reports[0].result.testEnd
     };
   }
 
@@ -552,6 +616,7 @@
     calibrateWinProbability,
     buildWalkForwardCalibration,
     runChronologicalBacktest,
+    runMinimumStartsCommonRaceComparison,
     runYearlyBacktests,
     diagnoseNoHistoryNames,
     diagnoseShortHistoryHorses,
