@@ -386,11 +386,17 @@
     const years = Array.from(new Set(rows.map(r => r.date.slice(0, 4)))).sort();
     return years.map(year => {
       const testRows = rows.filter(r => r.date.slice(0, 4) === year);
-      const result = { year, noHistory: 0, normalizedPriorMatch: 0, onlyLaterHistory: 0, noNameMatchInImportedData: 0, examples: [] };
+      const result = { year, noHistory: 0, normalizedPriorMatch: 0, onlyLaterHistory: 0, noNameMatchInImportedData: 0, age2: 0, age3: 0, age4Plus: 0, ageUnknown: 0, examples: [] };
       testRows.forEach(row => {
         const exactPrior = (history.byHorse.get(row.horse) || []).some(past => past.date < row.date);
         if (exactPrior) return;
         result.noHistory++;
+        const ageMatch = text(row.sexAge).match(/(\\d{1,2})/);
+        const age = ageMatch ? Number(ageMatch[1]) : null;
+        if (age === 2) result.age2++;
+        else if (age === 3) result.age3++;
+        else if (age != null && age >= 4) result.age4Plus++;
+        else result.ageUnknown++;
         const key = normalizeHorseName(row.horse);
         const variants = byNormalizedName.get(key) || [];
         const priorVariants = variants.filter(past => past.date < row.date);
