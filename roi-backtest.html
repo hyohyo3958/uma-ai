@@ -471,6 +471,67 @@ function raceUpsetReport(races,yearStart,nextYear){
  return out;
 }
 
+// ---- レースの荒れやすさ診断・段階2:人気・オッズ情報を足す(診断専用・事後分析) ----
+// A=何も使わない / B=段階1のレース条件 / C=人気・オッズだけ(個別・全部) / D=レース条件+人気・オッズ
+// 人気・オッズは最終値なので、購入時点では分かりません。購入時点のオッズでの検証とは別です。
+function raceUpsetReport2(races,yearStart,nextYear){
+ const sig=z=>1/(1+Math.exp(-Math.max(-30,Math.min(30,z))));
+ const solve=(M,v)=>{const n=v.length,A=M.map((r,i)=>r.concat([v[i]]));for(let i=0;i<n;i++){let m=i;for(let r=i+1;r<n;r++)if(Math.abs(A[r][i])>Math.abs(A[m][i]))m=r;[A[i],A[m]]=[A[m],A[i]];if(Math.abs(A[i][i])<1e-12)return null;for(let r=0;r<n;r++){if(r===i)continue;const f=A[r][i]/A[i][i];for(let c=i;c<=n;c++)A[r][c]-=f*A[i][c];}}return A.map((r,i)=>r[n]/r[i]);};
+ const bucketN=n=>n<=10?'頭数〜10':n<=12?'頭数11〜12':n<=14?'頭数13〜14':n<=16?'頭数15〜16':'頭数17〜';
+ const bucketD=d=>d==null?'距離不明':d<=1200?'距離〜1200':d<=1400?'距離1400':d<=1800?'距離1600〜1800':d<=2200?'距離2000〜2200':'距離2400〜';
+ const cats=r=>['n:'+bucketN(r.n),'場:'+r.venue,'面:'+r.surface,'d:'+bucketD(r.distance),'馬場:'+(r.going||'不明'),'R:'+r.raceNo];
+ const X1=r=>Math.log(r.fo)-1,X2=r=>Math.log(r.so/r.fo),X3=r=>r.t3-0.6; // 1番人気のオッズ(対数) / 1番人気と2番人気のオッズ差(比の対数) / 上位3頭の支持の集中度
+ const fit=(rows,spec,names,lam)=>{
+  const nE=spec.ex.length,idx=new Map(names.map((n,i)=>[n,i+nE+3]));const k=nE+3+(spec.cond?names.length:0);
+  const feats=r=>{const ix=[0],val=[1];spec.ex.forEach((f,i)=>{ix.push(1+i);val.push(f(r));});
+   if(spec.cond){if(r.young2){ix.push(nE+1);val.push(r.young2);}if(r.young3){ix.push(nE+2);val.push(r.young3);}cats(r).forEach(c=>{if(idx.has(c)){ix.push(idx.get(c));val.push(1);}});}return {ix,val};};
+  const F=rows.map(feats),w=new Array(k).fill(0);const base=rows.reduce((a,r)=>a+r.y,0)/rows.length;w[0]=Math.log(base/(1-base));
+  for(let it=0;it<40;it++){const g=new Array(k).fill(0),H=Array.from({length:k},()=>new Array(k).fill(0));
+   rows.forEach((r,ri)=>{const f=F[ri];let z=0;for(let t=0;t<f.ix.length;t++)z+=f.val[t]*w[f.ix[t]];const p=sig(z),ww=Math.max(1e-8,p*(1-p));
+    for(let a=0;a<f.ix.length;a++){g[f.ix[a]]+=(r.y-p)*f.val[a];for(let b=0;b<f.ix.length;b++)H[f.ix[a]][f.ix[b]]+=ww*f.val[a]*f.val[b];}});
+   for(let i=1;i<k;i++){H[i][i]+=lam;g[i]-=lam*w[i];}H[0][0]+=1e-6;
+   const d=solve(H,g);if(!d)break;let st=0;for(let i=0;i<k;i++){w[i]+=d[i];st+=Math.abs(d[i]);}if(st<1e-7)break;}
+  const pr=r=>{const f=feats(r);let z=0;for(let t=0;t<f.ix.length;t++)z+=f.val[t]*w[f.ix[t]];return sig(z);};pr.w=w;return pr;};
+ const auc=(rows,pr)=>{const a=rows.map(r=>({p:pr(r),y:r.y})).sort((u,v)=>u.p-v.p);let sumPos=0,npos=0,i=0;
+  while(i<a.length){let j=i;while(j<a.length&&a[j].p===a[i].p)j++;const avg=(i+1+j)/2;for(let t=i;t<j;t++){if(a[t].y){sumPos+=avg;npos++;}}i=j;}
+  const nneg=a.length-npos;return npos&&nneg?(sumPos-npos*(npos+1)/2)/(npos*nneg):NaN;};
+ const pct=v=>(v*100).toFixed(1)+'%',f5=v=>v.toFixed(5),sg=v=>(v>=0?'+':'')+v.toFixed(5);
+ const specs=[['A 何も使わない',{cond:false,ex:[]}],['B レース条件(段階1)',{cond:true,ex:[]}],
+  ['C1 1番人気のオッズだけ',{cond:false,ex:[X1]}],['C2 1〜2番人気のオッズ差だけ',{cond:false,ex:[X2]}],['C3 上位3頭の支持集中度だけ',{cond:false,ex:[X3]}],
+  ['C 人気・オッズ3つ全部',{cond:false,ex:[X1,X2,X3]}],
+  ['D1 レース条件+1番人気のオッズ',{cond:true,ex:[X1]}],['D2 レース条件+オッズ差',{cond:true,ex:[X2]}],['D3 レース条件+支持集中度',{cond:true,ex:[X3]}],
+  ['D レース条件+人気・オッズ3つ',{cond:true,ex:[X1,X2,X3]}]];
+ const evaluate=(label,train,test)=>{
+  if(train.length<1000||test.length<500)return '■'+label+'\n  データ不足(学習 '+fmt(train.length)+'レース / 評価 '+fmt(test.length)+'レース)\n';
+  const names=Array.from(new Set(train.flatMap(cats))),n=test.length,res={};
+  for(const [nm,sp] of specs){const pr=fit(train,sp,names,5);const per=[];let L=0,B=0;
+   test.forEach(r=>{const p=Math.min(1-1e-6,Math.max(1e-6,pr(r)));const l=-(r.y?Math.log(p):Math.log(1-p));L+=l;B+=(p-r.y)*(p-r.y);per.push(l);});
+   res[nm]={pr,per,ll:L/n,brier:B/n,auc:auc(test,pr)};}
+  const nms=specs.map(s=>s[0]);
+  const pair=(x,y)=>{const d=res[x].per.map((v,i)=>v-res[y].per[i]),m=d.reduce((a,v)=>a+v,0)/n,sd=Math.sqrt(d.reduce((a,v)=>a+(v-m)*(v-m),0)/Math.max(1,n-1)),se=sd/Math.sqrt(n);return {d:m,lo:m-1.96*se,hi:m+1.96*se};};
+  const verdict=c=>c.hi<0?'改善(明確)':(c.lo>0?'悪化(明確)':'差は誤差の範囲');
+  let out='■'+label+'\n  学習 '+fmt(train.length)+'レース / 評価 '+fmt(n)+'レース(全モデル同じレース) / 荒れ率 学習側 '+pct(train.reduce((a,r)=>a+r.y,0)/train.length)+' ・評価側 '+pct(test.reduce((a,r)=>a+r.y,0)/n)+'\n';
+  for(const nm of nms)out+='  '+nm+'：対数損失 '+f5(res[nm].ll)+' / Brier '+f5(res[nm].brier)+' / AUC '+res[nm].auc.toFixed(3)+'\n';
+  const wD=res[nms[9]].pr.w,wC=res[nms[5]].pr.w;
+  out+='  Cの係数：1番人気オッズ(対数) '+wC[1].toFixed(3)+' / オッズ差 '+wC[2].toFixed(3)+' / 支持集中度 '+wC[3].toFixed(3)+'\n';
+  for(const [x,y,t] of [[nms[1],nms[0],'B − A(レース条件の効果)'],[nms[5],nms[0],'C − A(人気・オッズだけの効果)'],[nms[9],nms[1],'D − B(人気・オッズを足す効果)'],[nms[9],nms[5],'D − C(レース条件を足す効果)'],[nms[6],nms[1],'D1 − B(1番人気のオッズ)'],[nms[7],nms[1],'D2 − B(オッズ差)'],[nms[8],nms[1],'D3 − B(支持集中度)']]){const c=pair(x,y);out+='  '+t+'(対数損失の差・1レースあたり)：'+sg(c.d)+'(95%区間 '+sg(c.lo)+' 〜 '+sg(c.hi)+')→ '+verdict(c)+'\n';}
+  const ranked=test.map(r=>({r,p:res[nms[9]].pr(r)})).sort((a,b)=>a.p-b.p);
+  const seg=(t,lo,hi)=>{const part=ranked.slice(Math.floor(n*lo),Math.floor(n*hi)),m=part.length;
+   return '  Dの予測で分けると '+t+'：'+fmt(m)+'レース / 予測の荒れ率 '+pct(part.reduce((a,x)=>a+x.p,0)/m)+' / 実際の荒れ率 '+pct(part.reduce((a,x)=>a+x.r.y,0)/m)+' / 1番人気の単勝回収率 '+pct(part.reduce((a,x)=>a+x.r.favReturn,0)/(m*100));};
+  out+=seg('堅そうな下位20%',0,0.2)+'\n'+seg('中位60%',0.2,0.8)+'\n'+seg('荒れそうな上位20%',0.8,1)+'\n';
+  return out;};
+ const all=races.filter(r=>r.date<nextYear&&r.y!=null&&r.fo>0&&r.so>0&&Number.isFinite(r.t3)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+ const train=all.filter(r=>r.date<yearStart),test=all.filter(r=>r.date>=yearStart);
+ let out='【レースの荒れやすさ診断・段階2:人気・オッズを足す(診断専用・事後分析)】\n';
+ out+='人気・オッズは最終値で、購入時点では分かりません。予測精度と回収率は別です。「1番人気の単勝回収率」は、予測した荒れやすさのグループごとの参考値です。\n';
+ out+='1番人気のオッズ＝その馬の最終オッズ(対数)。オッズ差＝2番人気のオッズ÷1番人気のオッズ(対数)。支持集中度＝上位3頭の最終オッズの逆数の合計÷全馬の合計(控除率補正後)。全馬のオッズが揃ったレースだけを使います。\n\n';
+ out+=evaluate('1. 対象年(学習=対象年より前の全レース)',train,test)+'\n';
+ const cut=Math.floor(train.length*0.7);
+ out+=evaluate('2. 学習後半(学習=学習前半。対象年を使わない確認)',train.slice(0,cut),train.slice(cut))+'\n';
+ out+='※判定は95%区間で行います。D−B が2024年・2025年の両方で「改善(明確)」なら、人気情報は荒れやすさの予測に役立ちます。ただし最終オッズによる事後分析なので、購入時点のオッズでの再検証が必要です。';
+ return out;
+}
+
 $('priorCsv').addEventListener('change',async()=>{
  priorCsvRows=[];priorYears=[];
  const files=Array.from($('priorCsv').files||[]);
@@ -524,12 +585,14 @@ $('run').addEventListener('click',async()=>{
   const raceAgg=new Map();
   rawHistory.concat(priorCsvRows,csvRows).forEach(raw=>{const r=UMAIValueModel.normalizeResult(raw);if(!r.date||r.raceNo==null||!r.venue||/競走除外|出走取消|取消/.test(r.status||''))return;
    const pk=popKey(r);const k=key(r);if(!raceAgg.has(k))raceAgg.set(k,{seen:new Set(),rows:[]});const g=raceAgg.get(k);if(g.seen.has(pk))return;g.seen.add(pk);
-   g.rows.push({r,pop:number(raw['人気']),fin:r.finish,pay:number(raw['単勝払戻']),age:(String(r.sexAge||'').match(/(\d+)/)||[])[1]});});
+   g.rows.push({r,pop:number(raw['人気']),fin:r.finish,pay:number(raw['単勝払戻']),odds:number(raw['単勝オッズ']),age:(String(r.sexAge||'').match(/(\d+)/)||[])[1]});});
   const raceList=[];raceAgg.forEach((g,k)=>{const rows=g.rows;if(rows.length<5)return;const favs=rows.filter(x=>x.pop===1);if(favs.length!==1||!rows.every(x=>x.fin!=null&&x.fin>0))return;
    const f=favs[0],r0=rows[0].r,n=rows.length,ages=rows.map(x=>Number(x.age)).filter(Number.isFinite);
    raceList.push({date:r0.date,venue:r0.venue,raceNo:r0.raceNo,surface:r0.surface||'不明',distance:r0.distance,going:r0.going,n,
     young2:ages.length?ages.filter(a=>a<=2).length/ages.length:0,young3:ages.length?ages.filter(a=>a===3).length/ages.length:0,
-    y:f.fin===1?0:1,favReturn:f.fin===1?(f.pay||0):0});});
+    y:f.fin===1?0:1,favReturn:f.fin===1?(f.pay||0):0,
+    ...(()=>{const os=rows.map(x=>x.odds);if(!os.every(o=>o>1))return {fo:null,so:null,t3:null};const inv=os.map(o=>1/o),tot=inv.reduce((a,v)=>a+v,0),sorted=os.slice().sort((a,b)=>a-b);
+     return {fo:f.odds,so:sorted.find((o,i)=>i>0&&true)||null,t3:inv.slice().sort((a,b)=>b-a).slice(0,3).reduce((a,v)=>a+v,0)/tot};})()});});
   const samples=[];
   training.forEach(row=>{
    const scored=UMAIValueModel.scoreHorse({horse:row.horse,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,jockey:row.jockey},history,row.date);
@@ -581,7 +644,7 @@ $('run').addEventListener('click',async()=>{
   }
   const a=summarize(topBets),b=summarize(valueBets);
   const popSplit=(label,test)=>{const v=summarize(topBets.filter(x=>test(x.popularity)));return '  '+label+'：'+fmt(v.bets)+'件 / 的中 '+fmt(v.hits)+'件 / 回収率 '+pct(v.roi)+(v.bets&&v.bets<100?'【少数・参考値】':'');};
-  const marketText=marketModelReport(samples,calibrationDiagnosticRows)+'\n\n'+lastRaceReport(samples,calibrationDiagnosticRows)+'\n\n'+conditionReport(samples,calibrationDiagnosticRows)+'\n\n'+raceUpsetReport(raceList,yearStart,nextYear);
+  const marketText=marketModelReport(samples,calibrationDiagnosticRows)+'\n\n'+lastRaceReport(samples,calibrationDiagnosticRows)+'\n\n'+conditionReport(samples,calibrationDiagnosticRows)+'\n\n'+raceUpsetReport(raceList,yearStart,nextYear)+'\n\n'+raceUpsetReport2(raceList,yearStart,nextYear);
   const baselineText='【比較用(診断専用)：1番人気を毎レース単勝100円】\n'+display('同じレースだけ(最高スコア馬を買ったレースに限定)',summarize(favSameBets))+'\n'+display('全レース(最終人気が1番の馬が1頭のレース)',summarize(favAllBets))+'\n\n【最高スコア馬の人気別内訳】\n'+popSplit('1番人気',p=>p===1)+'\n'+popSplit('2〜3番人気',p=>p>=2&&p<=3)+'\n'+popSplit('4番人気以下',p=>p>=4)+'\n'+popSplit('人気不明',p=>!(p>=1))+'\n※人気は最終人気で、購入時点では確定していません。モデルが人気馬の買いに上乗せできているかを見る比較用です。';
   $('overall').textContent='【検証条件】\n対象期間：'+targetYear+'年 / 対象レース '+fmt(races.size)+' / 採点評価 '+fmt(processed)+'\n最低出走数：'+minStarts+'走以上 / 校正サンプル '+fmt(calibration.sampleCount)+'頭\n追加学習CSV：'+(priorCsvRows.length?priorYears.join(', ')+'年分':'なし')+'\n対象年の履歴：'+(rolling?'日付順に使用(診断オプション・実運用に近い条件)':'使用しない(前年末まで)')+'\n学習期間：'+training.reduce((m,r)=>!m||r.date<m?r.date:m,'')+'〜'+training.reduce((m,r)=>!m||r.date>m?r.date:m,'')+'\n採点対象外（採点不能・出走数不足等）：'+fmt(noScore)+'頭\n最高スコア同点で見送り：'+fmt(topTieRaces)+'レース\nオッズ不足レース（期待値買いの対象外）：'+fmt(noOddsRaces)+'\n\n'+display('【各レースの最高スコア馬を単勝100円】',a)+'\n\n'+display('【モデルの期待値条件を満たした馬を各100円】',b)+'\n\n'+baselineText+'\n\n'+marketText+'\n\n'+calibrationReport(calibrationDiagnosticRows)+'\\n\\n'+comparatorReport(samples,calibrationDiagnosticRows)+'\\n\\n'+periodDriftReport(samples,calibrationDiagnosticRows)+'\\n\\n'+bandReport('【期待値買い：スコア帯別】',valueDiagnosticRows,'score',[{label:'60〜69',min:60,max:70},{label:'70〜79',min:70,max:80},{label:'80〜89',min:80,max:90},{label:'90〜100',min:90,max:101}])+'\n\n'+bandReport('【期待値買い：最終オッズ帯別】',valueDiagnosticRows,'odds',[{label:'5〜9.9倍',min:5,max:10},{label:'10〜19.9倍',min:10,max:20},{label:'20〜49.9倍',min:20,max:50},{label:'50倍以上',min:50,max:Infinity}])+'\n\n'+bandReport('【期待値買い：期待払戻倍率別】',valueDiagnosticRows,'expectedReturn',[{label:'1.10〜1.49倍',min:1.1,max:1.5},{label:'1.50〜1.99倍',min:1.5,max:2},{label:'2.00〜2.99倍',min:2,max:3},{label:'3.00倍以上',min:3,max:Infinity}])+'\n\n※各帯は期待値条件を満たして実際に買い対象となった馬だけを集計。少数件の帯は参考値。最終オッズを用いた参考値。購入時点のオッズでの再現ではありません。';
   $('status').textContent='完了：本番設定・保存データは変更していません。';
