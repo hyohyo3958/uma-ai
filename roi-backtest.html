@@ -167,8 +167,8 @@ function periodDriftReport(allSamples,targetRows){
  const cal=UMAIValueModel.calibrateWinProbability(fit,200);
  if(!cal.ready||!hold.length)return '【学習期間内の時系列診断】\n学習サンプル不足のため診断できません。';
  const probability=score=>{const bin=cal.bins[Math.min(19,Math.floor(score/5))];return bin&&Number.isFinite(bin.probability)?bin.probability:cal.globalRate;};
- const holdRows=hold.map(s=>({score:s.score,hit:Number(s.finish)===1?1:0,probability:probability(s.score),venue:s.venue,surface:s.surface,distance:s.distance,going:s.going,sexAge:s.sexAge,fieldSize:s.fieldSize}));
- const target=targetRows.filter(r=>Number.isFinite(r.score)&&Number.isFinite(r.probability)).map(r=>({score:r.score,hit:r.hit?1:0,probability:r.probability,venue:r.venue,surface:r.surface,distance:r.distance,going:r.going,sexAge:r.sexAge,fieldSize:r.fieldSize}));
+ const holdRows=hold.map(s=>({score:s.score,hit:Number(s.finish)===1?1:0,probability:probability(s.score),venue:s.venue,surface:s.surface,distance:s.distance,going:s.going,sexAge:s.sexAge,fieldSize:s.fieldSize,popularity:s.popularity}));
+ const target=targetRows.filter(r=>Number.isFinite(r.score)&&Number.isFinite(r.probability)).map(r=>({score:r.score,hit:r.hit?1:0,probability:r.probability,venue:r.venue,surface:r.surface,distance:r.distance,going:r.going,sexAge:r.sexAge,fieldSize:r.fieldSize,popularity:r.popularity}));
  const metrics=rows=>{
   const n=rows.length;if(!n)return '—';
   const b=rows.reduce((a,r)=>a+Math.pow(r.probability-r.hit,2),0)/n;
@@ -208,7 +208,57 @@ function periodDriftReport(allSamples,targetRows){
   subgroup('競馬場',holdRows,venueKey,250)+'\n'+subgroup('競馬場',target,venueKey,250)+'\n'+
   '※各属性内で100頭未満（競馬場は250頭未満）の区分は省略。対象年と学習後半の構成差・校正差を確認する診断であり、因果関係を示すものではありません。';
  const dateRange=x=>x.length?String(x[0].date)+'〜'+String(x[x.length-1].date):'—';
- return '【学習期間と対象期間の時系列比較】\n学習前半（校正作成）：'+fmt(fit.length)+'頭 '+dateRange(fit)+'\n学習後半（未使用評価）：'+metrics(holdRows)+'（'+dateRange(hold)+'）\n対象年（従来の全学習データで校正）：'+metrics(target)+'\n\n【スコア帯別の分布・校正差】\n'+bandLines.join('\n')+'\n'+subgroupLines+'\n※学習期間を日付順に70%/30%分割。学習後半は前半だけで校正した未使用評価。対象年は対象年より前の全学習データで校正。';
+ return '【学習期間と対象期間の時系列比較】\n学習前半（校正作成）：'+fmt(fit.length)+'頭 '+dateRange(fit)+'\n学習後半（未使用評価）：'+metrics(holdRows)+'（'+dateRange(hold)+'）\n対象年（従来の全学習データで校正）：'+metrics(target)+'\n\n【スコア帯別の分布・校正差】\n'+bandLines.join('\n')+'\n'+subgroupLines+'\n※学習期間を日付順に70%/30%分割。学習後半は前半だけで校正した未使用評価。対象年は対象年より前の全学習データで校正。'+'\n\n'+popularityDiagnostics(fit.map(s=>({score:s.score,hit:Number(s.finish)===1?1:0,probability:probability(s.score),popularity:s.popularity})),holdRows,target);
+}
+
+// ---- 人気別・スコア別の勝率校正診断(読み取り専用。人気は診断だけに使い、採点・校正・期待値判定には使わない) ----
+function popularityDiagnostics(fitRows,holdRows,targetRows){
+ const pctP=n=>Number.isFinite(n)?(n*100).toFixed(1)+'%':'—';
+ const popBuckets=[{label:'1番人気',test:p=>p===1},{label:'2〜3番人気',test:p=>p>=2&&p<=3},{label:'4〜6番人気',test:p=>p>=4&&p<=6},{label:'7〜9番人気',test:p=>p>=7&&p<=9},{label:'10番人気以下',test:p=>p>=10}];
+ const scoreBands=[{label:'60〜69',min:60,max:70},{label:'70〜79',min:70,max:80},{label:'80〜89',min:80,max:90},{label:'90〜100',min:90,max:101}];
+ const popOf=r=>{const p=Number(r.popularity);return Number.isFinite(p)&&p>0?p:null;};
+ const bucketOf=r=>{const p=popOf(r);if(p==null)return null;const b=popBuckets.find(x=>x.test(p));return b?b.label:null;};
+ const missing=rows=>rows.filter(r=>popOf(r)==null).length;
+ const cell=x=>{
+  const n=x.length;if(!n)return '—';
+  const hits=x.reduce((a,r)=>a+r.hit,0),actual=hits/n,est=x.reduce((a,r)=>a+r.probability,0)/n;
+  const warn=(n<100||hits<10)?'【少数・参考値】':'';
+  return fmt(n)+'頭 / 推定 '+pctP(est)+' / 実勝率 '+pctP(actual)+' / 差 '+((actual-est)*100).toFixed(1)+'pt / 実勝数 '+hits+warn;
+ };
+ const periods=[['学習前半',fitRows],['学習後半',holdRows],['対象年',targetRows]];
+ let out='【人気別・スコア別の勝率校正診断(診断専用。人気は採点にも校正にも使っていません)】\n';
+ out+='人気データの欠損(補完はしていません): '+periods.map(([n,r])=>n+' '+fmt(missing(r))+'/'+fmt(r.length)+'頭').join(' / ')+'\n';
+ out+='※人気はCSVに記録された最終人気です。\n';
+ // 1. スコア帯 x 人気区分
+ [['学習後半',holdRows],['対象年',targetRows]].forEach(([name,rows])=>{
+  out+='\n■1. スコア帯 × 人気区分('+name+')\n';
+  scoreBands.forEach(b=>{
+   out+=b.label+'\n';
+   popBuckets.forEach(pb=>{
+    const x=rows.filter(r=>r.score>=b.min&&r.score<b.max&&bucketOf(r)===pb.label);
+    out+='  '+pb.label+'：'+cell(x)+'\n';
+   });
+  });
+ });
+ // 2. 人気区分別の時系列比較
+ out+='\n■2. 人気区分別の時系列校正比較(学習前半は校正に使った期間なので参考)\n';
+ popBuckets.forEach(pb=>{
+  out+=pb.label+'\n';
+  periods.forEach(([name,rows])=>{out+='  '+name+'：'+cell(rows.filter(r=>bucketOf(r)===pb.label))+'\n';});
+ });
+ // 3. 高スコア馬の人気構成
+ out+='\n■3. 高スコア馬(80点以上)の人気構成(60点以上全体との比較)\n';
+ [['学習後半',holdRows],['対象年',targetRows]].forEach(([name,rows])=>{
+  const all=rows.filter(r=>r.score>=60&&bucketOf(r)),hi=rows.filter(r=>r.score>=80&&bucketOf(r));
+  out+=name+'：80点以上 '+fmt(hi.length)+'頭 / 60点以上 '+fmt(all.length)+'頭\n';
+  popBuckets.forEach(pb=>{
+   const h=hi.filter(r=>bucketOf(r)===pb.label).length,a=all.filter(r=>bucketOf(r)===pb.label).length;
+   const hs=hi.length?h/hi.length:null,as=all.length?a/all.length:null;
+   out+='  '+pb.label+'：80点以上 '+fmt(h)+'頭('+pctP(hs)+') / 60点以上全体 '+fmt(a)+'頭('+pctP(as)+') / 構成差 '+(hs!=null&&as!=null?((hs-as)*100).toFixed(1)+'pt':'—')+'\n';
+  });
+ });
+ out+='\n※頭数100未満または実勝数10未満の区分は【少数・参考値】と表示。因果関係を示すものではなく、原因調査のための診断です。';
+ return out;
 }
 
 $('priorCsv').addEventListener('change',async()=>{
@@ -241,10 +291,13 @@ $('run').addEventListener('click',async()=>{
   const nextYear=String(targetYear+1)+'-01-01';
   const training=history.rows.filter(r=>r.date<yearStart&&r.finish!=null&&!/競走除外|出走取消|取消/.test(r.status||''));
   if(!training.length)throw new Error(targetYear+'年より前の学習用履歴がありません。対象年より前の成績を同じブラウザに用意してください。');
+  const popKey=r=>key(r)+'|'+(r.horseNo!=null?r.horseNo:r.horse);
+  const popMap=new Map();
+  rawHistory.concat(priorCsvRows).forEach(raw=>{const r=UMAIValueModel.normalizeResult(raw);const pv=number(raw['人気']!=null&&raw['人気']!==''?raw['人気']:raw.popularity);if(r.date&&pv!=null&&pv>0)popMap.set(popKey(r),pv);});
   const samples=[];
   training.forEach(row=>{
    const scored=UMAIValueModel.scoreHorse({horse:row.horse,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,jockey:row.jockey},history,row.date);
-   if(scored.score!=null&&scored.starts>=minStarts)samples.push({score:scored.score,finish:row.finish,date:row.date,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,sexAge:row.sexAge,fieldSize:row.fieldSize});
+   if(scored.score!=null&&scored.starts>=minStarts)samples.push({score:scored.score,finish:row.finish,date:row.date,venue:row.venue,surface:row.surface,distance:row.distance,going:row.going,sexAge:row.sexAge,fieldSize:row.fieldSize,popularity:popMap.get(popKey(row))});
   });
   const calibration=UMAIValueModel.calibrateWinProbability(samples,200);
   if(!calibration.ready)throw new Error('勝率校正に必要な学習サンプルが不足しています（'+fmt(calibration.sampleCount)+'件）。');
@@ -267,7 +320,7 @@ $('run').addEventListener('click',async()=>{
    processed++;
    eligible.forEach(h=>{
     const bin=calibration.bins[Math.min(19,Math.floor(h.score/5))];
-    if(bin&&Number.isFinite(bin.probability))calibrationDiagnosticRows.push({score:h.score,probability:bin.probability,hit:h.finish===1,venue:h.venue,surface:h.surface,distance:h.distance,going:h.going,sexAge:h.sexAge,fieldSize:group.filter(row=>!/競走除外|出走取消|取消/.test(row.status||'')).length});
+    if(bin&&Number.isFinite(bin.probability))calibrationDiagnosticRows.push({score:h.score,probability:bin.probability,hit:h.finish===1,venue:h.venue,surface:h.surface,distance:h.distance,going:h.going,sexAge:h.sexAge,popularity:h.popularity,fieldSize:group.filter(row=>!/競走除外|出走取消|取消/.test(row.status||'')).length});
    });
    const sorted=eligible.slice().sort((a,b)=>b.score-a.score);
    const bestScore=sorted[0].score,top=sorted.filter(h=>h.score===bestScore);
