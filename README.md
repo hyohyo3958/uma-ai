@@ -1,2 +1,2 @@
 # uma-ai
-UMA AI horse racing app
+Quiet Odds (formerly UMA AI) - horse racing app
