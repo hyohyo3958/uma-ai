@@ -1,4 +1,4 @@
-const CACHE_NAME = "uma-ai-shell-v2";
+const CACHE_NAME = "uma-ai-shell-v3";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./value-model.js", "./history-store.js", "./icons/icon-192.png", "./icons/icon-512.png"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(FILES)));
