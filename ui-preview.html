@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>UMA AI | Personal Racing Intelligence</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--surface:#111c2d;--surface2:#17253a;--line:#26364d;--text:#f3f6fb;--muted:#93a3b8;--gold:#e7bd69;--gold2:#f5d994;--green:#6bd0a0;--red:#f08b83;--blue:#86b7ff;--radius:18px}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 50% -20%,#1c2b43 0,transparent 48%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;letter-spacing:.01em}
+button{font:inherit;cursor:pointer}a{color:inherit;text-decoration:none}.app{max-width:1120px;margin:auto;padding:22px 22px 100px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:28px}.brand{display:flex;align-items:center;gap:12px}.mark{width:42px;height:42px;border-radius:14px;background:linear-gradient(145deg,#f4d58f,#b88738);display:grid;place-items:center;color:#172033;font-size:22px;font-weight:900;box-shadow:0 8px 28px #d5a74c33}.brand-name{font-size:21px;font-weight:850;letter-spacing:.12em}.brand-sub{font-size:9px;color:var(--muted);letter-spacing:.2em;margin-top:3px}.top-actions{display:flex;align-items:center;gap:10px}.date-chip,.preview-chip{border:1px solid var(--line);background:#111c2dcc;border-radius:999px;padding:9px 13px;color:var(--muted);font-size:12px}.preview-chip{color:var(--gold2);border-color:#755f37;background:#2b2418}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:10px 0 22px}.eyebrow{color:var(--gold);font-size:10px;letter-spacing:.2em;font-weight:800}.page-head h1{font-size:clamp(25px,4vw,36px);letter-spacing:.02em;margin:7px 0 6px}.page-head p{color:var(--muted);font-size:13px;margin:0;line-height:1.7}.session{display:flex;align-items:center;gap:8px;color:var(--green);font-size:11px;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 12px #6bd0a088}
+.grid{display:grid;gap:16px}.overview{grid-template-columns:1.45fr 1fr 1fr}.panel{background:linear-gradient(155deg,#17253a,#111b2b);border:1px solid var(--line);border-radius:var(--radius);padding:19px;box-shadow:0 12px 30px #00000018}.panel-label{font-size:11px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:8px}.panel-value{font-size:30px;font-weight:800;letter-spacing:-.04em;margin:13px 0 4px}.panel-foot{font-size:11px;color:var(--muted)}.accent{color:var(--gold2)}.mini-bars{display:flex;align-items:flex-end;gap:5px;height:32px;margin-top:14px}.mini-bars i{display:block;flex:1;border-radius:4px 4px 1px 1px;background:#b88c45;opacity:.75}
+.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:29px 0 13px}.section-head h2{font-size:16px;margin:0}.section-head a,.text-link{color:var(--gold2);font-size:11px}.race-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.race-card{position:relative;overflow:hidden}.race-card:before{content:"";position:absolute;right:-34px;top:-40px;width:130px;height:130px;border-radius:50%;background:#e7bd690b}.race-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.venue{font-size:11px;color:var(--muted)}.race-no{font-size:11px;color:var(--gold2);font-weight:800;letter-spacing:.12em}.race-card h3{font-size:19px;margin:13px 0 5px}.race-meta{font-size:11px;color:var(--muted)}.race-bottom{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);margin-top:17px;padding-top:13px}.race-state{font-size:10px;color:var(--green)}.outline-btn{border:1px solid #52627a;background:transparent;color:var(--text);border-radius:10px;padding:8px 11px;font-size:11px}.outline-btn:hover{border-color:var(--gold);color:var(--gold2)}
+.main-grid{grid-template-columns:1.35fr .9fr;margin-top:16px}.pick{display:grid;grid-template-columns:42px 1fr auto;gap:12px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line)}.pick:last-child{border:0;padding-bottom:0}.rank{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#2c2a22;color:var(--gold2);font-weight:800;font-size:13px}.horse-name{font-size:14px;font-weight:750}.horse-meta{font-size:10px;color:var(--muted);margin-top:4px}.score{text-align:right;font-size:18px;font-weight:850;color:var(--gold2)}.score small{display:block;font-size:9px;color:var(--muted);font-weight:500}.value-tag{display:inline-block;margin-left:6px;padding:3px 6px;border-radius:5px;background:#19382f;color:var(--green);font-size:9px}
+.status-list{display:grid;gap:15px;margin-top:17px}.status-row{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px}.status-name{color:var(--muted)}.status-ok{color:var(--green);font-size:10px}.progress{height:5px;border-radius:9px;background:#26364d;overflow:hidden;margin-top:7px}.progress span{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#a77b37,var(--gold2))}
+.callout{display:flex;align-items:center;justify-content:space-between;gap:18px;background:linear-gradient(110deg,#30291d,#1b2637 72%);border:1px solid #6c5937;border-radius:var(--radius);padding:19px 21px;margin-top:17px}.callout h3{font-size:15px;margin:0 0 5px}.callout p{font-size:11px;color:#c2b69d;margin:0;line-height:1.6}.gold-btn{border:0;border-radius:11px;background:linear-gradient(135deg,#f2d38d,#c69648);color:#1a1a1a;font-size:12px;font-weight:850;padding:12px 17px;white-space:nowrap}
+.view{display:none}.view.active{display:block}.tabbar{position:fixed;z-index:10;bottom:0;left:0;right:0;background:#0c1524ed;border-top:1px solid var(--line);backdrop-filter:blur(18px);padding:10px max(14px,calc((100vw - 650px)/2)) calc(10px + env(safe-area-inset-bottom));display:flex;justify-content:space-around;gap:6px}.tab{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:64px;padding:5px 9px;border:0;background:transparent;color:#7f91a8;font-size:9px}.tab .ico{font-size:18px;line-height:1.1}.tab.active{color:var(--gold2)}.tab.active .ico{filter:drop-shadow(0 0 7px #e7bd6977)}
+.subpage{padding-top:3px}.subpage h2{font-size:20px;margin:6px 0}.subpage>p{color:var(--muted);font-size:12px;line-height:1.7}.race-line{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:15px 0;border-bottom:1px solid var(--line)}.race-line:last-child{border:0}.race-line strong{font-size:13px}.race-line small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.pill{font-size:10px;border-radius:99px;padding:6px 9px;background:#1d342e;color:var(--green)}.placeholder{padding:26px 12px;text-align:center;color:var(--muted);font-size:12px;line-height:1.8}
+
+.race-filters{display:flex;gap:7px;overflow:auto;padding:2px 0 10px}.filter-btn{flex:0 0 auto;border:1px solid var(--line);background:#111c2d;color:var(--muted);border-radius:9px;padding:9px 13px;font-size:11px}.filter-btn.active{background:#382f20;border-color:#94713a;color:var(--gold2)}
+.race-list{display:grid;gap:9px}.race-item{display:grid;grid-template-columns:52px 1fr auto;gap:12px;align-items:center;padding:14px 15px}.race-number{width:42px;height:42px;border-radius:12px;background:#202d40;display:grid;place-items:center;font-weight:850;color:var(--gold2)}.race-title{font-size:13px;font-weight:750}.race-sub{font-size:10px;color:var(--muted);margin-top:4px}.race-status{font-size:10px;color:var(--gold2);text-align:right}
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:13px;margin-top:12px}table{border-collapse:collapse;width:100%;min-width:590px;font-size:11px}th{background:#1a293d;color:var(--muted);font-weight:600;text-align:left;padding:11px 10px;white-space:nowrap}td{padding:12px 10px;border-top:1px solid var(--line);white-space:nowrap}td strong{font-size:12px}.num{font-variant-numeric:tabular-nums;text-align:right}.horse-no{display:inline-grid;place-items:center;width:23px;height:23px;border-radius:6px;background:#26384e;font-weight:800;color:#fff}.odds{color:var(--gold2);font-weight:800}.data-note{font-size:10px;color:var(--muted);line-height:1.7;margin-top:10px}.ticket{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:13px 0;border-bottom:1px solid var(--line)}.ticket:last-child{border:0}.ticket-type{font-size:10px;color:var(--gold2);font-weight:800}.ticket-combo{font-size:15px;font-weight:800;margin-top:4px}.ticket-reason{font-size:10px;color:var(--muted);margin-top:4px}.ticket-price{font-size:14px;font-weight:800;text-align:right}.ticket-price small{display:block;font-size:9px;color:var(--muted);font-weight:500}.bet-total{display:flex;justify-content:space-between;align-items:center;padding-top:15px;margin-top:4px;border-top:1px solid var(--line)}.bet-total strong{font-size:21px;color:var(--gold2)}.action-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.action-row button{flex:1}
+.footer-note{text-align:center;color:#65758b;font-size:10px;margin:26px 0 0}
+@media(max-width:760px){.app{padding:17px 14px 105px}.topbar{margin-bottom:22px}.date-chip{display:none}.overview{grid-template-columns:1fr 1fr}.overview .panel:first-child{grid-column:1/-1}.race-grid{grid-template-columns:1fr}.race-card{padding:16px}.main-grid{grid-template-columns:1fr}.page-head{align-items:flex-start;flex-direction:column}.callout{align-items:flex-start;flex-direction:column}.gold-btn{width:100%}.panel-value{font-size:27px}}
+@media(min-width:761px){.tabbar{position:static;max-width:560px;margin:28px auto 0;border:1px solid var(--line);border-radius:16px;padding:8px;background:#111c2dcc}.app{padding-bottom:28px}.tab{flex-direction:row;font-size:11px}.tab .ico{font-size:15px}}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="topbar">
+  <div class="brand"><div class="mark">♞</div><div><div class="brand-name">UMA AI</div><div class="brand-sub">PERSONAL RACING INTELLIGENCE</div></div></div>
+  <div class="top-actions"><span class="date-chip">JRA CENTRAL · 2026 SEASON</span><span class="preview-chip">UI PREVIEW</span></div>
+</header>
+
+<section class="view active" id="home">
+  <div class="page-head"><div><div class="eyebrow">DASHBOARD / HOME</div><h1>おかえりなさい。</h1><p>データと期待値から、狙うレースを見つけよう。</p></div><div class="session"><i class="dot"></i> PERSONAL MODE</div></div>
+  <div class="grid overview">
+    <article class="panel"><div class="panel-label">今週の分析ステータス <span class="accent">WEEKLY REPORT</span></div><div class="panel-value">準備完了</div><div class="panel-foot">出走表・オッズは手動入力待ち。データ未確認の予想は行いません。</div><div class="mini-bars"><i style="height:32%"></i><i style="height:50%"></i><i style="height:41%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:88%"></i><i style="height:63%"></i><i style="height:100%"></i><i style="height:78%"></i><i style="height:90%"></i></div></article>
+    <article class="panel"><div class="panel-label">保存済み過去データ</div><div class="panel-value">— <span style="font-size:13px;color:var(--muted)">頭分</span></div><div class="panel-foot">実データ接続後に表示</div></article>
+    <article class="panel"><div class="panel-label">検証済みレース</div><div class="panel-value">— <span style="font-size:13px;color:var(--muted)">RACES</span></div><div class="panel-foot">未検証の数値は表示しません</div></article>
+  </div>
+
+  <div class="section-head"><h2>今週の開催</h2><a href="#" data-open="races">全レースを見る →</a></div>
+  <div class="grid race-grid">
+    <article class="panel race-card"><div class="race-top"><span class="venue">東京競馬場 · 芝 / ダート</span><span class="race-no">TOKYO</span></div><h3>開催データ待ち</h3><div class="race-meta">出走表・オッズを登録すると分析できます</div><div class="race-bottom"><span class="race-state">● 手動データ待ち</span><button class="outline-btn" data-open="races">レース一覧</button></div></article>
+    <article class="panel race-card"><div class="race-top"><span class="venue">京都競馬場 · 芝 / ダート</span><span class="race-no">KYOTO</span></div><h3>開催データ待ち</h3><div class="race-meta">全レースを対象にスキャン</div><div class="race-bottom"><span class="race-state">● 手動データ待ち</span><button class="outline-btn" data-open="races">レース一覧</button></div></article>
+    <article class="panel race-card"><div class="race-top"><span class="venue">福島競馬場 · 芝 / ダート</span><span class="race-no">FUKUSHIMA</span></div><h3>開催データ待ち</h3><div class="race-meta">登録データがあるレースのみ表示</div><div class="race-bottom"><span class="race-state">● 手動データ待ち</span><button class="outline-btn" data-open="races">レース一覧</button></div></article>
+  </div>
+
+  <div class="grid main-grid">
+    <article class="panel"><div class="panel-label">VALUE AI <span class="accent">期待値重視</span></div><div class="section-head" style="margin:10px 0 0"><h2>注目馬ピックアップ</h2><span class="venue">サンプル表示ではありません</span></div><div class="placeholder">出走表と単勝オッズを登録すると、<br>根拠のある穴馬だけをここに表示します。<br>データ不足なら「見送り」と判定します。</div></article>
+    <article class="panel"><div class="panel-label">DATA HEALTH <span class="status-ok">● CHECK</span></div><div class="section-head" style="margin:10px 0 0"><h2>データ管理</h2></div><div class="status-list">
+      <div><div class="status-row"><span class="status-name">過去成績CSV</span><span class="status-ok">既存機能</span></div><div class="progress"><span style="width:82%"></span></div></div>
+      <div><div class="status-row"><span class="status-name">出走表・単勝オッズ</span><span style="color:var(--gold2);font-size:10px">手動入力</span></div><div class="progress"><span style="width:12%"></span></div></div>
+      <div><div class="status-row"><span class="status-name">回収率検証</span><span class="status-ok">検証機能あり</span></div><div class="progress"><span style="width:68%"></span></div></div>
+    </div></article>
+  </div>
+  <div class="callout"><div><h3>次の一手：レースデータを登録</h3><p>まずは1レースから。出走表と取得時刻つきオッズを登録して、予想から検証までの流れを確認します。</p></div><button class="gold-btn" data-open="races">データ登録へ進む →</button></div>
+</section>
+
+<section class="view subpage" id="races">
+  <div class="page-head"><div><div class="eyebrow">RACE SCOUTER / JRA</div><h1>レース一覧</h1><p>開催場・レースを選択して、出走表とAI評価へ。</p></div><div class="session"><i class="dot"></i> ALL RACES</div></div>
+  <div class="panel" style="margin-bottom:14px"><div class="panel-label">開催日・競馬場 <span class="preview-chip">画面プレビュー</span></div><div class="race-filters"><button class="filter-btn active">11/21（土）</button><button class="filter-btn">11/22（日）</button></div><div class="race-filters"><button class="filter-btn active">東京</button><button class="filter-btn">京都</button><button class="filter-btn">福島</button></div></div>
+  <div class="section-head" style="margin-top:20px"><h2>東京競馬場 · 12 RACES</h2><span class="venue">芝・ダート全レース</span></div>
+  <div class="race-list">
+    <article class="panel race-item"><div class="race-number">01R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">ダート · 距離未登録 · 出走頭数 —</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">02R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">芝 / ダート · 距離未登録 · 出走頭数 —</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">03R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">条件・距離・頭数は登録データから表示</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">04R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">条件・距離・頭数は登録データから表示</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">05R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">条件・距離・頭数は登録データから表示</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">06R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">条件・距離・頭数は登録データから表示</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">07R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">条件・距離・頭数は登録データから表示</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">08R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">条件・距離・頭数は登録データから表示</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">09R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">条件・距離・頭数は登録データから表示</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">10R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">条件・距離・頭数は登録データから表示</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">11R</div><div><div class="race-title">メインレース · 登録データ待ち</div><div class="race-sub">重賞・特別競走も同じ画面で管理</div></div><div class="race-status">データ待ち</div></article>
+    <article class="panel race-item"><div class="race-number">12R</div><div><div class="race-title">レース情報を読み込み待ち</div><div class="race-sub">条件・距離・頭数は登録データから表示</div></div><div class="race-status">データ待ち</div></article>
+  </div>
+  <div class="data-note">※日付・開催・レース名はデザイン確認用の仮表示です。実際の開催情報や出走馬を取得したものではありません。登録データと連携した段階で実データ表示に切り替えます。</div>
+  <div class="action-row"><button class="gold-btn" data-open="entries">出走表イメージを見る →</button></div>
+</section>
+
+<section class="view subpage" id="entries">
+  <div class="page-head"><div><div class="eyebrow">RACE DETAIL / ENTRIES</div><h1>出走表・馬別評価</h1><p>馬番、騎手、斤量、オッズ、AIスコアをひと目で比較。</p></div></div>
+  <div class="panel"><div class="panel-label">RACE INFORMATION <span class="preview-chip">画面プレビュー</span></div><h2 style="font-size:19px;margin:12px 0 5px">レース名・条件を表示</h2><div class="race-meta">競馬場 — · 芝 / ダート — · 距離 — m · 発走 —:—</div><div class="race-filters" style="margin-top:15px"><button class="filter-btn active">出走表</button><button class="filter-btn">AI評価順</button><button class="filter-btn">オッズ順</button></div></div>
+  <div class="section-head"><h2>出走馬一覧</h2><span class="venue">入力データ連携予定</span></div>
+  <div class="panel"><div class="table-wrap"><table><thead><tr><th>馬番</th><th>馬名</th><th>性齢</th><th>騎手</th><th class="num">斤量</th><th class="num">単勝</th><th class="num">AI評価</th></tr></thead><tbody>
+  <tr><td><span class="horse-no">—</span></td><td><strong>馬名未登録</strong></td><td>—</td><td>—</td><td class="num">—</td><td class="num odds">—</td><td class="num">—</td></tr>
+  <tr><td><span class="horse-no">—</span></td><td><strong>馬名未登録</strong></td><td>—</td><td>—</td><td class="num">—</td><td class="num odds">—</td><td class="num">—</td></tr>
+  <tr><td><span class="horse-no">—</span></td><td><strong>馬名未登録</strong></td><td>—</td><td>—</td><td class="num">—</td><td class="num odds">—</td><td class="num">—</td></tr>
+  <tr><td><span class="horse-no">—</span></td><td><strong>馬名未登録</strong></td><td>—</td><td>—</td><td class="num">—</td><td class="num odds">—</td><td class="num">—</td></tr>
+  <tr><td><span class="horse-no">—</span></td><td><strong>馬名未登録</strong></td><td>—</td><td>—</td><td class="num">—</td><td class="num odds">—</td><td class="num">—</td></tr>
+  </tbody></table></div><div class="data-note">馬名・騎手・オッズなどは実データ未接続のため空欄です。オッズ取得時刻もここに併記する設計です。</div></div>
+  <div class="action-row"><button class="outline-btn" data-open="races">← レース一覧</button><button class="gold-btn" data-open="bets">買い目を見る →</button></div>
+</section>
+
+<section class="view subpage" id="bets">
+  <div class="page-head"><div><div class="eyebrow">BET BUILDER / VALUE TICKETS</div><h1>買い目提案</h1><p>期待値の根拠がある組み合わせだけを提案。条件不足なら見送り。</p></div></div>
+  <div class="panel"><div class="panel-label">AI RECOMMENDATION <span class="pill">VALUE FIRST</span></div><div class="placeholder">出走表・オッズ・過去成績の照合後に買い目を生成します。<br>現時点では実際の買い目や推奨馬はありません。</div></div>
+  <div class="section-head"><h2>買い目カードの表示イメージ</h2><span class="venue">サンプル構成・購入不可</span></div>
+  <div class="panel">
+    <div class="ticket"><div><div class="ticket-type">券種 · 組み合わせ</div><div class="ticket-combo">馬番 — → —</div><div class="ticket-reason">期待値・推定勝率・オッズ根拠を表示</div></div><div class="ticket-price">—円<small>推奨金額</small></div></div>
+    <div class="ticket"><div><div class="ticket-type">券種 · 組み合わせ</div><div class="ticket-combo">馬番 — - —</div><div class="ticket-reason">穴馬を選んだ理由・リスクを表示</div></div><div class="ticket-price">—円<small>推奨金額</small></div></div>
+    <div class="ticket"><div><div class="ticket-type">券種 · 組み合わせ</div><div class="ticket-combo">見送り判定</div><div class="ticket-reason">期待値基準に届かない場合は購入を推奨しない</div></div><div class="ticket-price">0円<small>投資予定</small></div></div>
+    <div class="bet-total"><div><span class="panel-label">レース投資予定合計</span><div class="data-note">予算上限・1点金額を反映</div></div><strong>— 円</strong></div>
+  </div>
+  <div class="action-row"><button class="outline-btn" data-open="entries">← 出走表に戻る</button><button class="gold-btn" data-open="records">検証・成績へ →</button></div>
+</section>
+
+<section class="view subpage" id="ai">
+  <div class="page-head"><div><div class="eyebrow">VALUE ENGINE</div><h1>Value AI</h1><p>過去成績と出走表を照合し、期待値のある馬を抽出します。</p></div></div>
+  <div class="panel"><div class="panel-label">ANALYSIS PIPELINE <span class="pill">既存エンジン</span></div><div class="race-line"><div><strong>01 · 過去成績の読み込み</strong><small>CSVを追加・保存し、馬ごとの履歴を構築</small></div><span class="status-ok">対応済み</span></div><div class="race-line"><div><strong>02 · 出走表の読み込み</strong><small>馬番・馬名・騎手・条件・単勝オッズ</small></div><span style="color:var(--gold2);font-size:10px">手動入力</span></div><div class="race-line"><div><strong>03 · スコア・勝率校正</strong><small>未来の結果を混ぜない時系列方式</small></div><span class="status-ok">既存ロジック</span></div><div class="race-line"><div><strong>04 · 期待値判定</strong><small>条件を満たさなければ見送り</small></div><span class="status-ok">既存ロジック</span></div><a class="text-link" href="./index.html#valueAiCard">既存の分析ツールを開く →</a></div>
+</section>
+
+<section class="view subpage" id="records">
+  <div class="page-head"><div><div class="eyebrow">PERFORMANCE LAB</div><h1>検証・成績</h1><p>予想の的中率だけでなく、長期の回収率と期待値を検証します。</p></div></div>
+  <div class="grid overview">
+    <article class="panel"><div class="panel-label">回収率</div><div class="panel-value">—</div><div class="panel-foot">検証データ未接続</div></article>
+    <article class="panel"><div class="panel-label">投資合計</div><div class="panel-value">—</div><div class="panel-foot">実績のみ集計</div></article>
+    <article class="panel"><div class="panel-label">検証件数</div><div class="panel-value">—</div><div class="panel-foot">対象データ未登録</div></article>
+  </div>
+  <div class="panel" style="margin-top:16px"><div class="race-line"><div><strong>単勝ROI検証</strong><small>年別・時系列バックテスト</small></div><a class="text-link" href="./roi-backtest.html">開く →</a></div><div class="race-line"><div><strong>過去成績・履歴管理</strong><small>CSV取り込み・バックアップ</small></div><a class="text-link" href="./index.html#valueAiCard">開く →</a></div></div>
+</section>
+<p class="footer-note">UMA AI · PERSONAL RACING INTELLIGENCE · UI PREVIEW<br>この画面はデザイン確認用です。数値・開催情報・予想結果は実データに接続していません。</p>
+</div>
+
+<nav class="tabbar" aria-label="メインナビゲーション">
+  <button class="tab active" data-tab="home"><span class="ico">⌂</span>ホーム</button>
+  <button class="tab" data-tab="races"><span class="ico">▤</span>レース</button>
+  <button class="tab" data-tab="entries"><span class="ico">☷</span>出走表</button><button class="tab" data-tab="bets"><span class="ico">♢</span>買い目</button>
+  <button class="tab" data-tab="records"><span class="ico">▥</span>検証・成績</button>
+</nav>
+<script>
+function showView(id){
+ document.querySelectorAll('.view').forEach(function(v){v.classList.toggle('active',v.id===id);});
+ document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.tab===id || (id==='entries' && t.dataset.tab==='entries') || (id==='bets' && t.dataset.tab==='bets'));});
+ window.scrollTo({top:0,behavior:'smooth'});
+}
+document.querySelectorAll('.tab').forEach(function(t){t.addEventListener('click',function(){showView(t.dataset.tab);});});
+document.querySelectorAll('.filter-btn').forEach(function(b){b.addEventListener('click',function(){var group=b.parentElement;group.querySelectorAll('.filter-btn').forEach(function(x){x.classList.remove('active');});b.classList.add('active');});});
+document.querySelectorAll('[data-open]').forEach(function(b){b.addEventListener('click',function(e){e.preventDefault();showView(b.dataset.open);});});
+</script>
+</body>
+</html>
